@@ -30,11 +30,11 @@ android {
     buildToolsVersion = "34.0.0"
 
     defaultConfig {
-        applicationId = "io.github.abhishekkaisar.glassos"
+        applicationId = "io.github.abhishekkaisar.glassos.aerial"
         minSdk = 22
         targetSdk = 28
         versionCode = 3
-        versionName = "1.0.2-beta"
+        versionName = "1.0.2-aerial.1"
         buildConfigField("String", "TMDB_API_KEY", "\"${tmdbKey.replace("\"", "")}\"")
     }
 
@@ -50,6 +50,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Keep the locally tested build upgradeable to the optimized personal build without losing settings.
+            signingConfigs.findByName("release")?.let { signingConfig = it }
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true

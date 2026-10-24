@@ -56,6 +56,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         private set
     lateinit var hero: HeroView
         private set
+    private lateinit var aerial: AerialVideoView
     private lateinit var home: FrameLayout
     private lateinit var scrim: View
     private lateinit var header: FrameLayout
@@ -137,6 +138,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         Backdrop.removeListener(backdropListener)
         Backdrop.removeFrameListener(frameListener)
         hero.release()
+        aerial.release()
         labelAnim?.cancel()
         main.removeCallbacksAndMessages(null)
         worker.shutdownNow()
@@ -181,6 +183,16 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             onFocusDown = { focusDock() }
         }
         root.addView(hero, FrameLayout.LayoutParams(-1, -1))
+        aerial = AerialVideoView(ctx).apply {
+            onClipChanged = { clip ->
+                clip.poster?.let { poster ->
+                    val key = "aerial:" + poster.path
+                    // Preparing a player can announce the same clip before its still finishes loading.
+                    if (hero.slides.singleOrNull()?.key != key) hero.setSlides(listOf(Slide(key, Slide.STATIC, art = poster)))
+                }
+            }
+        }
+        root.addView(aerial, FrameLayout.LayoutParams(-1, -1))
         // Behind the grid: the pre-blurred backdrop with a dark tint, faded in when scrolled (tvOS style).
         scrim = BlurScrim(ctx).apply { alpha = 0f }
         root.addView(scrim, FrameLayout.LayoutParams(-1, -1))
@@ -339,8 +351,10 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     /** The hero rotates only while the home row is on screen, nothing covers it and it is not focused. */
     fun updateHeroRunning() {
         if (!::hero.isInitialized || released) return
-        hero.setRunning(resumed && currentRow == 0 && !settings.isOpen && !cc.isOpen && !setup.isOpen && !hero.isFocused && !editMode &&
-            movingPkg == null && !appMenu.isOpen)
+        val visible = resumed && currentRow == 0 && !settings.isOpen && !cc.isOpen && !setup.isOpen && !editMode &&
+            movingPkg == null && !appMenu.isOpen
+        hero.setRunning(visible && !hero.isFocused && prefs.topShelf != HeroRepo.SRC_AERIAL)
+        aerial.setRunning(visible)
     }
 
     /**
@@ -423,7 +437,14 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         val token = ++wallToken
         worker.execute {
             val list = slidesFor(id)
-            ui { if (token == wallToken) hero.setSlides(list) }
+            val videos = if (prefs.topShelf == HeroRepo.SRC_AERIAL) AerialStore.clips(ctx) else emptyList()
+            ui {
+                if (token == wallToken) {
+                    hero.setSlides(list)
+                    aerial.setPlaylist(videos, prefs.topShelf == HeroRepo.SRC_AERIAL)
+                    updateHeroRunning()
+                }
+            }
             refreshTitles(id, token)
         }
     }
@@ -663,10 +684,12 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
 
     /** The default start, used by MainActivity: a scale-up from the tile. */
     fun startFrom(i: Intent, from: View?) {
+        aerial.setRunning(false)
         try {
             val opts = from?.let { ActivityOptions.makeScaleUpAnimation(it, 0, 0, it.width, it.height).toBundle() }
             ctx.startActivity(i, opts)
         } catch (e: Exception) {
+            updateHeroRunning()
             Toast.makeText(ctx, "Cannot open this app", Toast.LENGTH_SHORT).show()
         }
     }
