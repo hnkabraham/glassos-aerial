@@ -14,3 +14,8 @@ tmdb.properties
 *.apk
 *.aab
 handoff.md
+
+# Local companion data and Python caches
+__pycache__/
+*.pyc
+manager/.data/

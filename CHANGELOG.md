@@ -1,5 +1,14 @@
 # Changelog
 
+## GlassOS Aerial 1.4.0-aerial.1 (fork, 2026-10-24)
+
+- Added a local Mac manager for named devices, verified APK updates and recovery copies, fresh settings exports, and TV-confirmed restore.
+- Added video import with silent H.264 encoding, posters, full decode checks, storage budgets and staged/hash-verified transfers.
+- Added scene collections and daily schedules, with backwards-compatible metadata and settings backups.
+- Refresh changed scene metadata and posters, retry repaired files, release the player promptly on pause, and skip stalled preparations/playback.
+- Added accessible thumbnail labels, collision-resistant backup filenames and a repeatable lifecycle/decoder ownership checker.
+- Added companion tests for interrupted transfers, low storage, corrupt sources, fresh backup identity and local API isolation.
+
 ## GlassOS Aerial 1.3.0-aerial.1 (fork, 2026-10-24)
 
 - Hold OK on an app to open its actions in either app-order mode. Uninstall opens the TV’s native confirmation; Cancel keeps the app and layout. Manual rearranging now starts with **Move** in this menu.

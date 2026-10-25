@@ -83,6 +83,38 @@ thumbnail over the playing video. Thumbnails are decoded at thumbnail size off t
 - Empty folder, every scene hidden, files gone or clips this TV cannot decode: the poster or the background chosen
   under "When Top Shelf art is unavailable" shows instead, and the browser says why.
 
+### Collections and daily rhythm
+
+Open **Scenery → Collection** to choose All scenes, Coastlines, Mountains, Forests & gardens, Deserts, Underwater, Space, Cities, Other, or Scheduled. Untagged clips belong to Other. Favourites and hidden-scene choices still apply. If the selected collection has no playable eligible clips, GlassOS uses your other eligible scenes and explains the fallback in Scenery.
+
+The [Mac manager](../manager/README.md) edits titles, categories and daily start times, prepares clips, and syncs them. Returning Home rescans the library; manager transfers also request a refresh. Replacing a failed video under the same filename lets it retry without restarting the launcher. Updated scene names and posters refresh in the open scenery browser.
+
+For a manually managed library, extend `scenes.json` with collection IDs:
+
+```json
+{
+  "01-coast.mp4": {"title": "Evening Coast", "location": "Oregon", "collections": ["coast"]},
+  "02-mountains.mp4": {"title": "Mountain Morning", "collections": ["mountains"]}
+}
+```
+
+The IDs are `coast`, `mountains`, `forest`, `desert`, `underwater`, `space`, `city` and `other`. A clip may have several. Existing title-only metadata remains compatible.
+
+An optional `scenery.json` alongside the videos defines the daily schedule:
+
+```json
+{
+  "version": 1,
+  "schedule": [
+    {"start": 420, "collection": "coast"},
+    {"start": 720, "collection": "mountains"},
+    {"start": 1200, "collection": "space"}
+  ]
+}
+```
+
+`start` is a whole number of minutes after local midnight: 420 is 07:00, 720 is 12:00, and 1200 is 20:00. There may be 1–24 entries with distinct times; the last wraps into the following morning. `all` is also a valid scheduled collection. The file is limited to 8 KB. Malformed or missing schedules use All scenes. Choose **Scheduled** on the TV to enable it; the default remains All scenes. Minute ticks, clock/timezone changes and returning Home refresh the selection. The schedule is media metadata; a settings backup includes the selected mode but does not carry this file.
+
 ### Cinema mode
 
 After a while without input (Settings > **Cinema mode**: Off, 30 s, 1, 2, 5, 10 or 30 minutes; 1 minute by default)

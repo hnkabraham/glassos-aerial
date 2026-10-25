@@ -14,12 +14,15 @@ import android.view.View
 import java.io.File
 
 /** Locally cached video, an optional matching still for the glass and loading fallback, and its on-screen name. */
-data class AerialClip(val video: File, val poster: File?, val name: SceneName = SceneNames.humanize(video.name)) {
+data class AerialClip(val video: File, val poster: File?, val name: SceneName = SceneNames.humanize(video.name),
+    val revision: String = "${video.length()}:${video.lastModified()}:${poster?.length()}:${poster?.lastModified()}") {
     /** The clip's file name: what favourites, hidden scenes and the play order refer to. */
     val id: String get() = video.name
 }
 
 object AerialStore {
+    @Volatile var schedule: List<ScenePeriod> = emptyList()
+        private set
     /** User-managed offline library, readable with GlassOS's existing photo/storage permission. */
     @Suppress("DEPRECATION")
     fun root(): File = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "GlassAerial")
@@ -27,6 +30,9 @@ object AerialStore {
     /** The clips in name order (the numbered names set the order), with their posters and names. Off the UI thread. */
     fun clips(ctx: Context): List<AerialClip> {
         val root = root()
+        schedule = File(root, SceneSchedule.FILE).let { f ->
+            try { if (f.isFile && f.length() <= 8192) SceneSchedule.parse(f.readText()) else emptyList() } catch (_: Exception) { emptyList() }
+        }
         val files = try { root.listFiles() } catch (e: SecurityException) { null } ?: return emptyList()
         val meta = File(root, SceneMetadata.FILE).let { f ->
             if (f.isFile && f.length() in 1..SceneMetadata.MAX_BYTES.toLong()) SceneMetadata.parse(try { f.readText() } catch (e: Exception) { null })
@@ -51,6 +57,7 @@ object SceneSession {
     var position = 0
     val failed = HashSet<String>()
     var library: List<String> = emptyList()
+    var revisions: Map<String, String> = emptyMap()
     /** The last clip whose name was shown, so returning to Home does not show it again. */
     var labeled: String? = null
     private var loaded = false
@@ -74,7 +81,7 @@ object SceneSession {
 }
 
 /** What may play: the library and the user's scene choices. */
-class SceneChoice(val favorites: Set<String>, val hidden: Set<String>, val favoritesOnly: Boolean, val shuffle: Boolean)
+class SceneChoice(val favorites: Set<String>, val hidden: Set<String>, val favoritesOnly: Boolean, val shuffle: Boolean, val collection: String = "all")
 
 /**
  * A silent video layer behind the app grid. Uses the platform decoder, with no audio focus or media session.
@@ -105,6 +112,20 @@ class AerialVideoView(ctx: Context) : TextureView(ctx), TextureView.SurfaceTextu
     private val main = Handler(Looper.getMainLooper())
     private val playlist get() = SceneSession.playlist
     private val advance = Runnable { if (canPlay()) open() }
+    private val progress = PlaybackProgress()
+    private val prepareTimeout = Runnable { current()?.let { if (player != null && canPlay()) fail(it, "first frame timeout") } }
+    private val watchdog = object : Runnable {
+        override fun run() {
+            val p = player ?: return
+            if (!prepared || !canPlay()) return
+            try {
+                if (progress.stalled(p.currentPosition, android.os.SystemClock.uptimeMillis())) {
+                    current()?.let { fail(it, "playback stalled") }; return
+                }
+            } catch (_: IllegalStateException) { current()?.let { fail(it, "invalid playback state") }; return }
+            main.postDelayed(this, 5000)
+        }
+    }
 
     init {
         surfaceTextureListener = this
@@ -126,14 +147,15 @@ class AerialVideoView(ctx: Context) : TextureView(ctx), TextureView.SurfaceTextu
         // Another Top Shelf source: stop, but leave the shared play order and position as they are.
         if (!on) { enabled = false; visibility = View.GONE; sync(); return }
         val newIds = list.map { it.id }
-        if (newIds != ids || list.map { it.video.path } != clips.values.map { it.video.path }) {
-            clips = list.associateBy { it.id }
-            ids = newIds
-        }
-        if (newIds != SceneSession.library) {
-            SceneSession.failed.clear()
-            SceneSession.library = newIds
-        }
+        val revisions = list.associate { it.id to "${it.video.path}:${it.revision}" }
+        val changed = revisions.filter { (id, revision) -> SceneSession.revisions[id] != revision }.keys
+        if (playlist.current in changed && playlist.current in SceneSession.revisions) { closePlayer(save = false); SceneSession.position = 0 }
+        SceneSession.failed.removeAll(changed + (SceneSession.revisions.keys - revisions.keys))
+        SceneSession.revisions = revisions
+        SceneSession.library = newIds
+        // Metadata can change without filenames changing.
+        clips = list.associateBy { it.id }
+        ids = newIds
         val wasEnabled = enabled
         enabled = true
         refilter(announce = !wasEnabled)
@@ -144,9 +166,11 @@ class AerialVideoView(ctx: Context) : TextureView(ctx), TextureView.SurfaceTextu
         playlist.setLibrary(ids)
         playlist.setShuffle(choice.shuffle)
         val r = SceneFilter.eligible(ids, choice.favorites, choice.hidden, choice.favoritesOnly, SceneSession.failed)
-        reason = r.reason
-        val ok = playlist.setEligible(r.eligible)
-        if (r.eligible.isEmpty()) enabled = false
+        val selected = r.eligible.filter { SceneCollections.contains(choice.collection, clips[it]?.name?.collections ?: emptySet()) }
+        val eligible = if (selected.isEmpty()) r.eligible else selected
+        reason = if (r.eligible.isNotEmpty() && selected.isEmpty()) SceneFilter.Reason.COLLECTION_EMPTY else r.reason
+        val ok = playlist.setEligible(eligible)
+        if (eligible.isEmpty()) enabled = false
         visibility = if (enabled) View.VISIBLE else View.GONE
         if (!enabled) { sync(); return }
         if (!ok || clips[playlist.current] == null) { changeTo { playlist.next() }; return }
@@ -229,10 +253,13 @@ class AerialVideoView(ctx: Context) : TextureView(ctx), TextureView.SurfaceTextu
                 val position = SceneSession.position
                 if (position > 0 && position < mp.duration - 1000) mp.seekTo(position)
                 mp.start()
+                progress.reset(android.os.SystemClock.uptimeMillis())
+                main.postDelayed(watchdog, 5000)
                 Log.i(TAG, "playing ${clip.id} at $position ms; muted")
             }
             p.setOnInfoListener { mp, what, _ ->
                 if (mp === player && what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START && canPlay()) {
+                    main.removeCallbacks(prepareTimeout)
                     animate().alpha(1f).setDuration(Effects.fade(450)).start()
                 }
                 false
@@ -244,6 +271,7 @@ class AerialVideoView(ctx: Context) : TextureView(ctx), TextureView.SurfaceTextu
             }
             p.setDataSource(clip.video.path)
             p.prepareAsync()
+            main.postDelayed(prepareTimeout, 20_000)
         } catch (e: Exception) { fail(clip, e.javaClass.simpleName) }
     }
 
@@ -259,6 +287,8 @@ class AerialVideoView(ctx: Context) : TextureView(ctx), TextureView.SurfaceTextu
     }
 
     private fun closePlayer(save: Boolean = true) {
+        main.removeCallbacks(prepareTimeout)
+        main.removeCallbacks(watchdog)
         val p = player ?: return
         player = null
         animate().cancel()

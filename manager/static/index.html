@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>GlassOS Manager</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script defer src="/app.js"></script>
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">G</span>
+        <div>GlassOS<span class="subbrand">YOUR TV, AT HOME</span></div>
+      </div>
+      <nav aria-label="Sections">
+        <button class="nav active" data-page="overview">
+          Overview <span>01</span></button
+        ><button class="nav" data-page="library">
+          Scenery library <span>02</span></button
+        ><button class="nav" data-page="schedule">
+          Daily rhythm <span>03</span></button
+        ><button class="nav" data-page="backups">
+          Settings backups <span>04</span>
+        </button>
+      </nav>
+      <div class="device-picker">
+        <label for="device">YOUR FIRE STICK</label
+        ><select id="device">
+          <option value="">Add a device</option></select
+        ><button id="add-device" class="text-button">
+          + Add another device
+        </button>
+      </div>
+      <div class="local-note">
+        <i class="dot"></i> Runs on this Mac
+        <p>No cloud account. Your videos and device records stay local.</p>
+      </div>
+    </aside>
+    <main>
+      <header>
+        <div>
+          <div class="eyebrow" id="eyebrow">THE BIG PICTURE</div>
+          <h1 id="page-title">A little more calm.</h1>
+          <p id="page-description">
+            Your home screen, scenery and settings, together.
+          </p>
+        </div>
+        <div class="header-actions">
+          <span class="badge">LOCAL COMPANION</span
+          ><button id="refresh" class="secondary">Refresh</button>
+        </div>
+      </header>
+      <div id="notice" role="alert" hidden></div>
+      <section id="overview" class="page">
+        <div class="welcome">
+          <div>
+            <span class="eyebrow">READY FOR YOUR NEXT VIEW</span>
+            <h2>Your living room.<br />Your way.</h2>
+            <p>Keep GlassOS up to date and your favourite places close.</p>
+            <button class="primary" data-go="library">
+              Explore scenery <span>↗</span>
+            </button>
+          </div>
+          <div class="landscape" aria-hidden="true">
+            <div class="sun"></div>
+            <div class="mountain back"></div>
+            <div class="mountain front"></div>
+            <div class="landscape-label">SILENT SCENERY · LOCALLY CACHED</div>
+          </div>
+        </div>
+        <div class="stats">
+          <article>
+            <span>GLASSOS VERSION</span><strong id="version">Not checked</strong
+            ><small id="model">Choose a device to get started</small>
+          </article>
+          <article>
+            <span>FREE ON YOUR TV</span><strong id="free">—</strong
+            ><small>400 MB kept free during transfers</small>
+          </article>
+          <article>
+            <span>YOUR SCENERY</span><strong id="scene-count">0 scenes</strong
+            ><small id="scene-duration"
+              >Add your saved collection or a video</small
+            >
+          </article>
+        </div>
+        <div class="section-heading">
+          <h2>Device essentials</h2>
+          <span id="checked">Check a device to see its status</span>
+        </div>
+        <div class="action-grid">
+          <button class="action" data-action="inspect">
+            <b>Check device</b
+            ><span>Storage, Home, privacy & install blocks</span></button
+          ><button class="action" data-action="update">
+            <b>Update GlassOS</b
+            ><span>Verify the saved build and keep recovery files</span></button
+          ><button class="action" data-action="backup">
+            <b>Back up settings</b
+            ><span>Save the current TV layout on this Mac</span></button
+          ><button class="action" data-action="home">
+            <b>Open GlassOS</b><span>Bring your home screen to the TV</span>
+          </button>
+        </div>
+        <div class="health-grid">
+          <article class="panel">
+            <h3>Home & privacy</h3>
+            <div id="privacy" class="check-list">
+              Run a device check to see the current settings.
+            </div>
+            <p class="fine">
+              Package checks show configuration, not a network traffic audit.
+              Some native Amazon services can still run.
+            </p>
+          </article>
+          <article class="panel">
+            <h3>Instagram install blocks</h3>
+            <div id="blocks" class="check-list">
+              The manager checks the TV, mobile and Lite packages.
+            </div>
+            <p class="fine">
+              A verified placeholder blocks ordinary replacements while
+              installed. Browser access and casting are separate.
+            </p>
+          </article>
+        </div>
+      </section>
+      <section id="library" class="page" hidden>
+        <div class="library-toolbar">
+          <div class="filters" id="filters"></div>
+          <button class="secondary" data-action="bundle">
+            Add saved collection</button
+          ><button class="primary" data-action="sync">
+            Sync selected to TV ↗
+          </button>
+        </div>
+        <div class="budget-bar">
+          <div>
+            <b id="selected-size">0 MB selected</b><span> · sync budget</span>
+          </div>
+          <label
+            ><input
+              id="budget"
+              type="number"
+              min="128"
+              max="16384"
+              step="128"
+              value="2048"
+            />
+            MB <button id="save-budget" class="text-button">Save</button></label
+          ><progress id="budget-progress" max="100" value="0"></progress>
+        </div>
+        <div
+          class="drop-zone"
+          id="drop-zone"
+          tabindex="0"
+          role="button"
+          aria-label="Import a video"
+        >
+          <span class="upload-icon">↑</span><b>Drop a video. Keep the view.</b
+          ><span
+            >We’ll make a silent, TV-ready clip and a thumbnail. Or click to
+            browse.</span
+          ><input id="video-file" type="file" accept="video/*" hidden />
+        </div>
+        <p class="fine">
+          Selected scenes are copied and verified. Existing extra videos on the
+          TV are kept. The budget limits this transfer collection; it does not
+          delete your files.
+        </p>
+        <div id="scenes" class="scene-grid"></div>
+      </section>
+      <section id="schedule" class="page" hidden>
+        <div class="section-heading">
+          <h2>A different view as the day unfolds.</h2>
+          <button id="add-period" class="secondary">+ Add a time</button>
+        </div>
+        <p class="intro">
+          Choose a collection for each part of the day. Each entry lasts until
+          the next, following your TV’s local time.
+        </p>
+        <div id="periods" class="periods"></div>
+        <div class="schedule-footer">
+          <button id="save-schedule" class="primary">Save daily rhythm</button>
+          <p>
+            Then sync your scenery and choose
+            <b>Scenery → Collection → Scheduled</b> on the TV. An empty
+            collection falls back to other visible scenes.
+          </p>
+        </div>
+      </section>
+      <section id="backups" class="page" hidden>
+        <div class="section-heading">
+          <h2>Make another TV feel like home.</h2>
+          <button class="primary" data-action="backup">
+            Back up current TV
+          </button>
+        </div>
+        <p class="intro">
+          Copy layouts, folders and display preferences between your Fire
+          Sticks. Restoring asks you to confirm on the TV.
+        </p>
+        <div id="backup-list" class="backup-list"></div>
+        <div class="panel backup-note">
+          <h3>What travels with a backup?</h3>
+          <p>
+            App layout, folders, scenery favourites and display settings. Videos
+            are synced separately. Accounts, permissions and the Home-button
+            setup stay with each device.
+          </p>
+        </div>
+      </section>
+      <footer id="activity">
+        <div class="activity-heading">
+          <span class="dot"></span
+          ><strong id="job-title">Everything is quiet.</strong
+          ><button id="toggle-log" class="text-button">Activity log</button>
+        </div>
+        <div id="job-message">
+          Choose a device or add your scenery collection to begin.
+        </div>
+        <pre id="job-log" hidden></pre>
+      </footer>
+    </main>
+    <dialog id="device-dialog">
+      <form id="device-form">
+        <h2>Add a Fire Stick</h2>
+        <p>
+          Use the address shown in its network settings. Accept the ADB prompt
+          on that TV when connecting.
+        </p>
+        <label
+          >Name<input
+            name="name"
+            required
+            maxlength="60"
+            placeholder="Living room" /></label
+        ><label
+          >Device address<input
+            name="address"
+            required
+            placeholder="FIRESTICK_IP:5555"
+        /></label>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" data-close="device-dialog">
+            Cancel</button
+          ><button class="primary">Save device</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="import-dialog">
+      <form id="import-form">
+        <h2>A new place to pause.</h2>
+        <p id="import-filename"></p>
+        <label>Scene name<input name="title" required maxlength="120" /></label
+        ><label
+          >Collection<select
+            name="collection"
+            id="import-collection"
+          ></select></label
+        ><label
+          >Clip length<select name="seconds">
+            <option value="30">30 seconds</option>
+            <option value="60">60 seconds</option>
+            <option value="90" selected>90 seconds</option>
+            <option value="120">2 minutes</option>
+            <option value="180">3 minutes</option>
+          </select></label
+        >
+        <p class="fine">
+          Starts at the beginning of your video. SDR video only. The source file
+          on your Mac is unchanged.
+        </p>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" data-close="import-dialog">
+            Cancel</button
+          ><button class="primary">Import & compress</button>
+        </div>
+      </form>
+    </dialog>
+  </body>
+</html>

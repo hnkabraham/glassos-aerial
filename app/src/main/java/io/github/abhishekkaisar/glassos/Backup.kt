@@ -39,7 +39,7 @@ object Backup {
      */
     fun write(ctx: Context, text: String, now: Long = System.currentTimeMillis()): Saved {
         val bytes = BackupCodec.fileBytes(text)
-        val name = "$PREFIX-" + SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date(now)) + ".json"
+        val name = "$PREFIX-" + SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.US).format(Date(now)) + "-" + java.util.UUID.randomUUID().toString().take(8) + ".json"
         if (canWriteShared(ctx)) {
             try { return Saved(writeAtomic(sharedDir(), name, bytes), true) }
             catch (e: IOException) { WLog.i("backup: shared storage failed: $e") }

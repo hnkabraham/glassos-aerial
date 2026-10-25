@@ -559,7 +559,7 @@ class StepperRow(ctx: Context, title: String, private val onStep: (Int) -> Unit)
 /** Wallpaper thumbnail in the background picker (also scene posters and app pickers). */
 class ThumbView(ctx: Context, private val tw: Int, private val th: Int, val wallId: String, label: String) : View(ctx) {
     var label = label
-        set(v) { if (field != v) { field = v; invalidate() } }
+        set(v) { contentDescription = v; if (field != v) { field = v; invalidate() } }
     /** Drawn faded: a hidden scene, still listed so it can be shown again. */
     var dim = false
         set(v) { if (field != v) { field = v; invalidate() } }
@@ -585,6 +585,7 @@ class ThumbView(ctx: Context, private val tw: Int, private val th: Int, val wall
     }
 
     init {
+        contentDescription = label
         isFocusable = true
         isClickable = true
         outlineProvider = null
