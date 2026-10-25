@@ -230,4 +230,3 @@ Android versions, and so it behaves the same on old Fire OS. Google Play's minim
 sideloaded launcher, so the build turns off that one lint check, `ExpiredTargetSdkVersion`
 ([app/build.gradle.kts](../app/build.gradle.kts)); every other lint check stays on. Raising the target API would mean moving clip and backup
 access to scoped storage first.
-
