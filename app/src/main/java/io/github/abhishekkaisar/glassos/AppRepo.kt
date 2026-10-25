@@ -67,13 +67,15 @@ object AppRepo {
                 map[pkg] = ri
             }
         }
-        return map.values.map { entry(ctx, it) }.sortedBy { it.label.lowercase() }
+        val custom = Prefs(ctx).customArt
+        return map.values.map { entry(ctx, it, custom) }.sortedBy { it.label.lowercase() }
     }
 
-    private fun entry(ctx: Context, ri: ResolveInfo): AppEntry {
+    private fun entry(ctx: Context, ri: ResolveInfo, custom: Boolean): AppEntry {
         val pm = ctx.packageManager
         val ai = ri.activityInfo
         val label = (ri.loadLabel(pm)?.toString() ?: ai.packageName).trim()
+        if (custom) CustomArt.load(ai.packageName)?.let { return AppEntry(ai.packageName, label, it, true, 0xFF2A3350.toInt()) }
         var d: Drawable? = null
         var banner = false
         try {

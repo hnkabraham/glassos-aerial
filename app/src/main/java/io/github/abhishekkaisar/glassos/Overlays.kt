@@ -62,6 +62,13 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
     private val favOnlyRow = RowView(context, "Favourite scenes only")
     private val labelsRow = RowView(context, "Scene names")
     private val cinemaRow = StepperRow(context, "Cinema mode") { d -> stepCinema(d) }
+    private val themeRow = StepperRow(context, "Glass theme") { d ->
+        val all = Themes.all
+        act.prefs.theme = all[(all.indexOfFirst { it.id == act.prefs.theme } + d + all.size) % all.size].id
+        changed()
+    }
+    private val artRow = RowView(context, "Custom app art")
+    private val movingClockRow = RowView(context, "Move cinema clock")
     private val clockRow = RowView(context, "Cinema clock")
     private val nightRow = RowView(context, "Night mode")
     private val nightStartRow = StepperRow(context, "Night starts") { d -> act.prefs.nightStart = NightSchedule.step(act.prefs.nightStart, d); changed() }
@@ -138,7 +145,7 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
             leftMargin = -dpi(14f); rightMargin = -dpi(14f); bottomMargin = dpi(6f)
         })
         list.addView(section("Scenery and display"))
-        for (r in listOf(sceneryRow, shuffleRow, favOnlyRow, labelsRow, cinemaRow, clockRow, nightRow, nightStartRow,
+        for (r in listOf(sceneryRow, shuffleRow, favOnlyRow, labelsRow, cinemaRow, clockRow, movingClockRow, themeRow, artRow, nightRow, nightStartRow,
                 nightEndRow, nightLevelRow, transparencyRow, motionRow)) list.addView(r, rowLp())
         list.addView(section("Apps"))
         list.addView(sortRow, rowLp())
@@ -202,6 +209,8 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         shuffleRow.onClick = { act.prefs.sceneShuffle = !act.prefs.sceneShuffle; act.applySceneChoice(); updateValues() }
         favOnlyRow.onClick = { act.prefs.sceneFavoritesOnly = !act.prefs.sceneFavoritesOnly; act.applySceneChoice(); updateValues() }
         labelsRow.onClick = { act.prefs.sceneLabels = !act.prefs.sceneLabels; updateValues() }
+        artRow.onClick = { act.prefs.customArt = !act.prefs.customArt; act.loadApps(); changed() }
+        movingClockRow.onClick = { act.prefs.movingClock = !act.prefs.movingClock; changed() }
         clockRow.onClick = { act.prefs.cinemaClock = !act.prefs.cinemaClock; changed() }
         nightRow.onClick = { act.prefs.nightEnabled = !act.prefs.nightEnabled; changed() }
         transparencyRow.onClick = { act.prefs.reduceTransparency = !act.prefs.reduceTransparency; changed() }
@@ -251,6 +260,9 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         favOnlyRow.valueView.text = onOff(p.sceneFavoritesOnly)
         labelsRow.valueView.text = onOff(p.sceneLabels)
         cinemaRow.value = p.cinemaDelaySec.let { s -> when { s == 0 -> "Off"; s < 60 -> "After $s s"; else -> "After ${s / 60} min" } }
+        themeRow.valueView.text = Themes.get(act.prefs.theme).label
+        artRow.valueView.text = onOff(act.prefs.customArt)
+        movingClockRow.valueView.text = onOff(act.prefs.movingClock)
         clockRow.valueView.text = onOff(p.cinemaClock)
         nightRow.valueView.text = onOff(p.nightEnabled)
         val h24 = android.text.format.DateFormat.is24HourFormat(context)

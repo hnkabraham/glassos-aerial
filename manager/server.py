@@ -119,9 +119,10 @@ class Handler(BaseHTTPRequestHandler):
                 raise Error("A Content-Length is required.")
             m = self.server.manager
             path = urlsplit(self.path).path
-            if path == "/api/upload":
-                if not 0 < size <= MAX_UPLOAD:
-                    raise Error("Choose a video smaller than 4 GB.")
+            if path in ("/api/upload", "/api/icon"):
+                is_icon = path == "/api/icon"
+                if not 0 < size <= (8 * 1024**2 if is_icon else MAX_UPLOAD):
+                    raise Error("Choose an image under 8 MB or a video under 4 GB.")
                 if m.work_lock.locked():
                     raise Error(
                         "Wait for the current operation to finish before importing."
@@ -142,6 +143,13 @@ class Handler(BaseHTTPRequestHandler):
                 collection = self.headers.get("X-Collection", "other")
                 seconds = self.headers.get("X-Seconds", "90")
                 staged = source
+                if is_icon:
+                    package = self.headers.get("X-Package", "")
+                    result = m.job(
+                        "Import app art", lambda log: m.import_icon(staged, package, log)
+                    )
+                    source = None
+                    return self.reply(result, 202)
                 result = m.job(
                     "Import video",
                     lambda log: m.import_video(
@@ -174,6 +182,23 @@ class Handler(BaseHTTPRequestHandler):
                 id = data.get("device")
                 action = data.get("action")
                 actions = {
+                    "baseline": ("Save health baseline", lambda log: m.baseline(id, log)),
+                    "catalog": (
+                        "Load scenery catalog", lambda log: m.load_catalog(data.get("url"), log)
+                    ),
+                    "catalog-import": (
+                        "Download and compress scene",
+                        lambda log: m.import_catalog(
+                            data.get("entry"), data.get("seconds", 90),
+                            data.get("collection", "other"), log
+                        ),
+                    ),
+                    "apps": ("Read TV apps", lambda log: m.list_apps(id, log)),
+                    "icons": ("Sync custom app art", lambda log: m.sync_icons(id, log)),
+                    "icon-reset": (
+                        "Restore original app art",
+                        lambda log: m.reset_icon(id, data.get("package"), log),
+                    ),
                     "inspect": ("Check device", lambda log: m.inspect(id, log)),
                     "bundle": ("Import saved scenery", m.import_bundle),
                     "sync": ("Sync selected scenery", lambda log: m.sync(id, log)),

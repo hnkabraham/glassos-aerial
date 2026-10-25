@@ -89,7 +89,7 @@ class GlassPainter {
      * backdrop sampling, grain or sheen. It does not change with the art behind it, so it never needs redrawing for it.
      */
     private fun drawSolid(c: Canvas, r: RectF, radius: Float) {
-        fill.color = lerpColor(SOLID, Color.WHITE, (tint * 0.6f).coerceIn(0f, 0.18f))
+        fill.color = lerpColor(Themes.current.solid, Themes.current.tint, (tint * 0.6f).coerceIn(0f, 0.18f))
         c.drawRoundRect(r, radius, radius, fill)
         edge.shader = null
         edge.strokeWidth = stroke
@@ -102,7 +102,7 @@ class GlassPainter {
     }
 
     private fun drawStatic(c: Canvas, r: RectF, radius: Float) {
-        val sk = "${r.left},${r.top},${r.width()},${r.height()},$radius,$dark,$tint,$tintColor,$grain,$sheen,$highlight,$border,$stroke"
+        val sk = "${r.left},${r.top},${r.width()},${r.height()},$radius,$dark,$tint,$tintColor,$grain,$sheen,$highlight,$border,$stroke,${Themes.current.id}"
         if (sk != staticKey || staticBmp == null) {
             staticKey = sk
             // Not recycled: the last recorded frame may still draw the old one.
@@ -119,12 +119,13 @@ class GlassPainter {
     }
 
     private fun drawOverlay(c: Canvas, r: RectF, radius: Float) {
-        if (dark > 0f) {
-            fill.color = Color.argb((dark * 255).toInt(), 4, 8, 20)
+        val shade = (dark + Themes.current.shade).coerceAtMost(0.85f)
+        if (shade > 0f) {
+            fill.color = alphaOf(if (Themes.current.id == "glass") 0xFF040814.toInt() else Themes.current.solid, shade)
             c.drawRoundRect(r, radius, radius, fill)
         }
         if (tint > 0f) {
-            fill.color = alphaOf(tintColor, tint)
+            fill.color = alphaOf(if (tintColor == Color.WHITE) Themes.current.tint else tintColor, tint)
             c.drawRoundRect(r, radius, radius, fill)
         }
         if (grain > 0f) {
