@@ -11,7 +11,9 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.os.SystemClock
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -74,8 +76,35 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     lateinit var appMenu: AppMenu
         private set
     private lateinit var movePill: GlassBox
+    lateinit var browser: SceneBrowser
+        private set
+    lateinit var folderPanel: FolderPanel
+        private set
+    private lateinit var sceneLabel: SceneLabel
+    private lateinit var cinemaClock: TextView
+    private lateinit var nightDim: View
 
     private var apps: List<AppEntry> = emptyList()
+    /** What the grid shows, by id: apps not in a folder, and each folder's own tile (id "folder:..."). */
+    private var entries: Map<String, AppEntry> = emptyMap()
+    /** Each folder's installed, unhidden apps, as last placed. */
+    private var folderMembers: Map<String, List<String>> = emptyMap()
+    /** The local aerial clips from the last scan. */
+    private var aerialClips: List<AerialClip> = emptyList()
+    /** A scene chosen in the browser while another Top Shelf source was on: played once the clips are loaded. */
+    private var pendingScene: String? = null
+    private var browserFromSettings = false
+    private var browserReturn: View? = null
+    /** True while the home has faded to its scenery after [Prefs.cinemaDelaySec] without input. */
+    private var cinema = false
+    private var lastInput = SystemClock.uptimeMillis()
+    /** The key that woke cinema mode: its repeats and release are eaten too, so it never reaches a tile. */
+    private var eatKey = -1
+    private var cinemaFocus: View? = null
+    private val idleCheck = Runnable { checkIdle() }
+    private var nightOn = false
+    private var nightLevelShown = -1f
+    private val ok: List<Pair<String, () -> Unit>> = listOf("OK" to {})
     private val dockTiles = ArrayList<TileView>()
     private val dockPkgs = ArrayList<String>()
     /** The drawer's apps in their order (the saved order, then new installs). Hidden apps are in neither list. */
@@ -108,22 +137,29 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     /** Called once per hero frame: only the glass surfaces that sample the backdrop redraw. */
     private val frameListener: () -> Unit = {
         if (::root.isInitialized) {
-            shelf.invalidate()
             gear.invalidate()
             chevron.invalidate()
-            if (scrim.alpha > 0f) scrim.invalidate()
-            if (settings.isOpen) invalidateDeep(settings.panel)
-            if (cc.isOpen) invalidateDeep(cc.panel)
-            if (setup.isOpen) invalidateDeep(setup.panel)
-            if (appMenu.isOpen) invalidateDeep(appMenu.panel)
-            if (movePill.visibility == View.VISIBLE) movePill.invalidate()
+            // Solid panels (reduce transparency) do not show the art behind them: nothing to redraw.
+            if (!Effects.reduceTransparency) {
+                shelf.invalidate()
+                if (scrim.alpha > 0f) scrim.invalidate()
+                if (settings.isOpen) invalidateDeep(settings.panel)
+                if (cc.isOpen) invalidateDeep(cc.panel)
+                if (setup.isOpen) invalidateDeep(setup.panel)
+                if (appMenu.isOpen) invalidateDeep(appMenu.panel)
+                if (browser.isOpen) invalidateDeep(browser.panel)
+                if (folderPanel.isOpen) invalidateDeep(folderPanel.panel)
+                if (movePill.visibility == View.VISIBLE) movePill.invalidate()
+            }
         }
     }
 
     init {
         Backdrop.addListener(backdropListener)
         Backdrop.addFrameListener(frameListener)
+        Effects.load(prefs)
         buildUi()
+        applyNight()
         worker.execute { HomeShare.ensureSound(ctx) }
         val seedHero = seed?.hero
         if (seedHero != null && seedHero.slides.isNotEmpty()) hero.adopt(seedHero) else setWallpaper(prefs.scene, save = false)
@@ -190,9 +226,18 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
                     // Preparing a player can announce the same clip before its still finishes loading.
                     if (hero.slides.singleOrNull()?.key != key) hero.setSlides(listOf(Slide(key, Slide.STATIC, art = poster)))
                 }
+                if (clip.id != SceneSession.labeled) {
+                    SceneSession.labeled = clip.id
+                    showSceneName(clip)
+                }
+                if (browser.isOpen) browser.refresh()
             }
+            onUnavailable = { if (browser.isOpen) browser.refresh() }
         }
         root.addView(aerial, FrameLayout.LayoutParams(-1, -1))
+        // With the aerial scenery, Left and Right on the Top Shelf change the scene and OK opens Scenery.
+        hero.onStep = { d -> if (aerial.isActive) { skipScene(d); true } else false }
+        hero.onPress = { if (aerial.isActive) { openSceneBrowser(); true } else false }
         // Behind the grid: the pre-blurred backdrop with a dark tint, faded in when scrolled (tvOS style).
         scrim = BlurScrim(ctx).apply { alpha = 0f }
         root.addView(scrim, FrameLayout.LayoutParams(-1, -1))
@@ -273,18 +318,46 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             topMargin = sh * 48 / 1080
         })
 
+        // The scene's name, top left where title logos go (the aerial source has none).
+        sceneLabel = SceneLabel(ctx)
+        root.addView(sceneLabel, FrameLayout.LayoutParams(sw * 50 / 100, -2, Gravity.TOP or Gravity.START).apply {
+            leftMargin = sw * 60 / 1920; topMargin = sh * 44 / 1080
+        })
+        // Cinema mode's clock, bottom right, only while the rest of the home is faded out.
+        cinemaClock = TextView(ctx).apply {
+            textSize = 54f
+            typeface = Fonts.light
+            setTextColor(0xF2FFFFFF.toInt())
+            setShadowLayer(ctx.dp(10f), 0f, ctx.dp(1f), 0x99000000.toInt())
+            alpha = 0f
+            visibility = View.GONE
+        }
+        root.addView(cinemaClock, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply {
+            rightMargin = sw * 64 / 1920; bottomMargin = sh * 48 / 1080
+        })
+        // Night mode: one dark layer over the scenery and the app grid, under every panel (menus stay full brightness).
+        nightDim = View(ctx).apply { visibility = View.GONE; isFocusable = false; isClickable = false }
+        root.addView(nightDim, FrameLayout.LayoutParams(-1, -1))
+
         settings = SettingsView(this)
         root.addView(settings, FrameLayout.LayoutParams(-1, -1))
         cc = ControlCenter(this)
         root.addView(cc, FrameLayout.LayoutParams(-1, -1))
         setup = SetupView(this)
         root.addView(setup, FrameLayout.LayoutParams(-1, -1))
+        browser = SceneBrowser(this)
+        root.addView(browser, FrameLayout.LayoutParams(-1, -1))
+        folderPanel = FolderPanel(this)
+        root.addView(folderPanel, FrameLayout.LayoutParams(-1, -1))
+        // Last: option cards open over every panel.
         appMenu = AppMenu(this)
         root.addView(appMenu, FrameLayout.LayoutParams(-1, -1))
 
         root.viewTreeObserver.addOnGlobalFocusChangeListener { old, new ->
             if (old != null && new != null && old !== new && prefs.sound && !FocusAnim.forceInstant) sound?.tick()
             if (new === hero || old === hero) updateHeroRunning()
+            if (new === hero) aerial.current()?.let { sceneLabel.show(it.name, SCENE_HINT, 0) }
+            else if (old === hero) sceneLabel.hide()
             if (::chevron.isInitialized) chevron.animate().alpha(if (new is TileView && (new.tag as? Int) == 0) 1f else 0f).setDuration(200).start()
             if (new is TileView) {
                 val r = (new.tag as? Int) ?: 0
@@ -299,7 +372,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         if (r == currentRow) return
         currentRow = r
         val target = if (r == 0) 0f else -(rowTop(r) - sh * 0.30f)
-        val instant = FocusAnim.forceInstant
+        val instant = FocusAnim.forceInstant || Effects.reduceMotion
+        if (r != 0) sceneLabel.hide(instant = true)
         if (instant) {
             content.animate().cancel(); header.animate().cancel(); scrim.animate().cancel()
             content.translationY = target
@@ -351,10 +425,12 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     /** The hero rotates only while the home row is on screen, nothing covers it and it is not focused. */
     fun updateHeroRunning() {
         if (!::hero.isInitialized || released) return
-        val visible = resumed && currentRow == 0 && !settings.isOpen && !cc.isOpen && !setup.isOpen && !editMode &&
-            movingPkg == null && !appMenu.isOpen
-        hero.setRunning(visible && !hero.isFocused && prefs.topShelf != HeroRepo.SRC_AERIAL)
+        // Scenery keeps playing behind its own browser (and the browser's option cards), so a choice shows at once.
+        val covered = settings.isOpen || cc.isOpen || setup.isOpen || folderPanel.isOpen || (appMenu.isOpen && !browser.isOpen)
+        val visible = resumed && currentRow == 0 && !covered && !editMode && movingPkg == null
+        hero.setRunning(visible && !browser.isOpen && !hero.isFocused && prefs.topShelf != HeroRepo.SRC_AERIAL)
         aerial.setRunning(visible)
+        syncIdle()
     }
 
     /**
@@ -437,12 +513,16 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         val token = ++wallToken
         worker.execute {
             val list = slidesFor(id)
-            val videos = if (prefs.topShelf == HeroRepo.SRC_AERIAL) AerialStore.clips(ctx) else emptyList()
+            val on = prefs.topShelf == HeroRepo.SRC_AERIAL
+            val videos = if (on) AerialStore.clips(ctx) else emptyList()
             ui {
                 if (token == wallToken) {
                     hero.setSlides(list)
-                    aerial.setPlaylist(videos, prefs.topShelf == HeroRepo.SRC_AERIAL)
+                    if (on) aerialClips = videos
+                    aerial.setPlaylist(videos, on, sceneChoice())
+                    pendingScene?.let { pendingScene = null; aerial.play(it) }
                     updateHeroRunning()
+                    if (browser.isOpen) browser.refresh()
                 }
             }
             refreshTitles(id, token)
@@ -488,11 +568,13 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
 
     /** The window went to the back (an app, the screensaver, Settings): a move in progress is put back. */
     fun onPaused() {
+        exitCinema(instant = true)
         resumed = false
         if (::appMenu.isInitialized) leaveMove()
     }
 
     fun onResumed() {
+        lastInput = SystemClock.uptimeMillis()
         resumed = true
         if (::setup.isInitialized) setup.onReturned()
         updateTime()
@@ -503,6 +585,9 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         if (!::gear.isInitialized) return
         val fmt = if (android.text.format.DateFormat.is24HourFormat(ctx)) "H:mm" else "h:mm a"
         gear.time = android.text.format.DateFormat.format(fmt, System.currentTimeMillis()).toString().uppercase()
+        if (::cinemaClock.isInitialized) cinemaClock.text = gear.time
+        // The minute tick, time and time zone changes all land here: night mode follows them without a timer.
+        applyNight()
     }
 
     private fun storageGranted() = Build.VERSION.SDK_INT < 23 ||
@@ -575,22 +660,32 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         if (movingPkg != null) endMove()
         if (appMenu.isOpen) appMenu.close()
         apps = list
-        val visible = visibleApps()
-        val shown = visible.map { it.pkg }.toSet()
-        val wanted = prefs.dock ?: AppRepo.defaultDock(visible)
+        val byPkg = list.associateBy { it.pkg }
+        val folders = prefs.folders
+        val names = folders.associate { it.id to it.name }
+        // Folders hold their apps out of the grid; HomeLayout keeps every installed, unhidden app reachable.
+        val p = HomeLayout.place(list.map { it.pkg }, prefs.hidden, folders, prefs.dock, prefs.order, COLS,
+            labelOf = { id -> names[id] ?: byPkg[id]?.label ?: id },
+            defaultDock = { ids -> AppRepo.defaultDock(ids.mapNotNull { byPkg[it] }) })
+        folderMembers = p.folderMembers
+        val e = HashMap<String, AppEntry>()
+        for (id in p.dock + p.drawer) {
+            e[id] = if (Folders.isFolderId(id)) {
+                val members = (folderMembers[id] ?: emptyList()).mapNotNull { byPkg[it] }
+                AppEntry(id, names[id] ?: "Folder", FolderArt.render(id, members), true, 0xFF2A3350.toInt())
+            } else byPkg[id] ?: continue
+        }
+        entries = e
         dockPkgs.clear()
-        dockPkgs.addAll(wanted.filter { it in shown }.distinct().take(COLS))
-        if (dockPkgs.isEmpty()) dockPkgs.addAll(AppRepo.defaultDock(visible))
+        dockPkgs.addAll(p.dock)
         drawerPkgs.clear()
-        drawerPkgs.addAll(AppRepo.arrange(visible.filter { it.pkg !in dockPkgs }, prefs.order).map { it.pkg })
+        drawerPkgs.addAll(p.drawer)
         rebuildGrid()
+        if (folderPanel.isOpen) folderPanel.refresh()
     }
 
-    /** Installed apps the user has not hidden, alphabetically. */
-    private fun visibleApps(): List<AppEntry> {
-        val hidden = prefs.hidden
-        return if (hidden.isEmpty()) apps else apps.filter { it.pkg !in hidden }
-    }
+    /** What the top row picker offers: apps not in a folder, and folders, alphabetically. */
+    fun topLevelEntries(): List<AppEntry> = (dockPkgs + drawerPkgs).mapNotNull { entries[it] }.sortedBy { it.label.lowercase() }
 
     private fun saveDock() { prefs.dock = dockPkgs.toList() }
     private fun saveOrder() { prefs.order = drawerPkgs.toList() }
@@ -601,8 +696,9 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
      */
     private fun returnToDrawer(pkg: String) {
         if (prefs.order == null) {
+            val all = (drawerPkgs + pkg).distinct().mapNotNull { entries[it] }.sortedBy { it.label.lowercase() }
             drawerPkgs.clear()
-            drawerPkgs.addAll(visibleApps().map { it.pkg }.filter { it !in dockPkgs })
+            drawerPkgs.addAll(all.map { it.pkg }.filter { it !in dockPkgs })
         } else {
             drawerPkgs.remove(pkg)
             drawerPkgs.add(0, pkg)
@@ -643,7 +739,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         while (content.childCount > 1) content.removeViewAt(content.childCount - 1)
         dockTiles.clear()
         rows.clear()
-        val byPkg = apps.associateBy { it.pkg }
+        val byPkg = entries
         val dockRow = ArrayList<TileView>()
         for (pkg in dockPkgs) byPkg[pkg]?.let { val t = makeTile(it, 0); t.nextFocusUpId = hero.id; dockRow.add(t) }
         dockTiles.addAll(dockRow)
@@ -660,7 +756,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             height = rowTop(rows.size) + rowH + ctx.dpi(120f)
         }
         if (editMode) dockTiles.forEach { it.setJiggle(true) }
-        if (settings.isOpen || appMenu.isOpen) return
+        if (settings.isOpen || appMenu.isOpen || browser.isOpen || folderPanel.isOpen) return
         val target = rows.flatten().firstOrNull { it.app?.pkg == keep }
         val cur = focused()
         when {
@@ -672,6 +768,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     }
 
     fun launch(pkg: String, from: View?) {
+        if (Folders.isFolderId(pkg)) { openFolder(pkg); return }
         val pm = ctx.packageManager
         val i = pm.getLeanbackLaunchIntentForPackage(pkg) ?: pm.getLaunchIntentForPackage(pkg)
         if (i == null) {
@@ -722,6 +819,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
 
     /** Leaves [pkg] out of the drawer and the top row (Settings > Hidden apps shows it again). */
     fun hideApp(pkg: String) {
+        if (Folders.isFolderId(pkg)) return
         if (pkg in dockPkgs && dockPkgs.size <= 1) {
             Toast.makeText(ctx, "The top row needs at least one app", Toast.LENGTH_SHORT).show()
             return
@@ -800,7 +898,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         dockPkgs.clear(); dockPkgs.addAll(dock)
         drawerPkgs.clear(); drawerPkgs.addAll(drawer)
         if (!same) { rebuildGrid(movingPkg); return }
-        val byPkg = apps.associateBy { it.pkg }
+        val byPkg = entries
         dockTiles.forEachIndexed { i, t -> val a = byPkg[dockPkgs[i]]; if (t.app !== a) t.app = a }
         var k = 0
         for (r in 1 until rows.size) for (t in rows[r]) { val a = byPkg[drawerPkgs[k++]]; if (t.app !== a) t.app = a }
@@ -867,14 +965,21 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     /** Menu while moving: add to or remove from the top row, or hide. Each action first drops the app where it is. */
     private fun openAppMenu() {
         val pkg = movingPkg ?: return
-        val app = apps.firstOrNull { it.pkg == pkg } ?: return
+        val app = entries[pkg] ?: return
         val onShelf = pkg in dockPkgs
         blockHome(true)
         movePill.visibility = View.INVISIBLE
-        appMenu.open(app.label, listOf(
-            (if (onShelf) "Remove from top row" else "Add to top row") to { dropMove(); toggleDock(pkg) },
-            "Hide app" to { dropMove(); hideApp(pkg) }
-        )) {
+        val items = ArrayList<Pair<String, () -> Unit>>()
+        items.add((if (onShelf) "Remove from top row" else "Add to top row") to { dropMove(); toggleDock(pkg) })
+        if (Folders.isFolderId(pkg)) {
+            items.add("Open folder" to { dropMove(); openFolder(pkg) })
+            items.add("Rename folder" to { dropMove(); openFolder(pkg, rename = true) })
+            items.add("Remove folder" to { dropMove(); confirmRemoveFolder(pkg) })
+        } else {
+            items.add("Add to a folder" to { dropMove(); chooseFolder(pkg) })
+            items.add("Hide app" to { dropMove(); hideApp(pkg) })
+        }
+        appMenu.open(app.label, items) {
             blockHome(false)
             if (movingPkg != null) {
                 movePill.visibility = View.VISIBLE
@@ -901,6 +1006,11 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         hero.isFocusable = !block
     }
 
+    /** Home's tiles stay out of focus while any panel is over them. */
+    private fun syncHomeBlock() {
+        blockHome(settings.isOpen || cc.isOpen || setup.isOpen || browser.isOpen || folderPanel.isOpen || appMenu.isOpen)
+    }
+
     fun focusDock() {
         if (dockTiles.isNotEmpty()) dockTiles[lastDockIndex.coerceIn(0, dockTiles.size - 1)].requestFocus()
         else gear.requestFocus()
@@ -913,6 +1023,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
 
     fun openSettings() {
         if (cc.isOpen) cc.close(instant = true)
+        if (browser.isOpen) browser.close(instant = true)
+        if (folderPanel.isOpen) folderPanel.close(instant = true)
         leaveMove()
         if (editMode) exitEdit()
         val a = ctx as? Activity
@@ -931,6 +1043,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         val fromSettings = settings.isOpen
         if (cc.isOpen) cc.close(instant = true)
         if (settings.isOpen) settings.close(instant = true)
+        if (browser.isOpen) browser.close(instant = true)
+        if (folderPanel.isOpen) folderPanel.close(instant = true)
         leaveMove()
         if (editMode) exitEdit()
         blockHome(true)
@@ -945,7 +1059,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     }
 
     fun openControlCenter() {
-        if (cc.isOpen || settings.isOpen || setup.isOpen) return
+        if (cc.isOpen || settings.isOpen || setup.isOpen || browser.isOpen || folderPanel.isOpen) return
         leaveMove()
         if (editMode) exitEdit()
         val from = focused()
@@ -1031,6 +1145,439 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         rebuildGrid(dockPkgs[idx.coerceAtMost(dockPkgs.size - 1)])
     }
 
+    // ---------- Option cards ----------
+
+    /**
+     * An option card over whatever is open (the home, Settings, Scenery, a folder). The panels under it cannot take
+     * focus while it is up; when it closes without an action that moves focus, focus returns where it was.
+     */
+    fun card(heading: String, items: List<Pair<String, () -> Unit>>, message: String? = null) {
+        if (appMenu.isOpen) appMenu.close()
+        val back = focused()
+        val under = listOf<ViewGroup>(settings, browser, folderPanel).filter { it.visibility == View.VISIBLE }
+        under.forEach { it.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS }
+        blockHome(true)
+        appMenu.open(heading, items, message) {
+            under.forEach { it.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS }
+            syncHomeBlock()
+            if (back != null && back.isAttachedToWindow && back.isShown) back.requestFocus()
+            else if (!settings.isOpen && !browser.isOpen && !folderPanel.isOpen) focusDock()
+            updateHeroRunning()
+        }
+        updateHeroRunning()
+    }
+
+    // ---------- Scenery ----------
+
+    fun sceneChoice() = SceneChoice(prefs.sceneFavorites, prefs.sceneHidden, prefs.sceneFavoritesOnly, prefs.sceneShuffle)
+    fun sceneLibrary(): List<AerialClip> = aerialClips
+    fun currentScene(): AerialClip? = aerial.current()
+    fun sceneReason(): SceneFilter.Reason = aerial.reason
+
+    /** Runs [work] on the home's worker thread (decoding thumbnails, reading files). */
+    fun background(work: () -> Unit) { if (!worker.isShutdown) worker.execute(work) }
+
+    /** Rescans Movies/GlassAerial off the UI thread. */
+    fun rescanScenes(done: (List<AerialClip>) -> Unit) {
+        background {
+            val list = AerialStore.clips(ctx)
+            ui {
+                aerialClips = list
+                if (prefs.topShelf == HeroRepo.SRC_AERIAL) aerial.setPlaylist(list, true, sceneChoice())
+                done(list)
+            }
+        }
+    }
+
+    /** Favourites, hidden scenes, favourites only or shuffle changed: the playing clip changes only if it must. */
+    fun applySceneChoice() {
+        val on = prefs.topShelf == HeroRepo.SRC_AERIAL
+        aerial.setPlaylist(aerialClips, on, sceneChoice())
+        // Nothing may play now (every scene hidden): back to the still background rather than a hidden scene's poster.
+        if (on && !aerial.isActive) setWallpaper(prefs.scene, save = false)
+        syncOtherScenery()
+    }
+
+    private fun syncOtherScenery() { HomeShare.main?.takeIf { it !== this }?.let { it.aerial.setPlaylist(it.aerialClips, it.prefs.topShelf == HeroRepo.SRC_AERIAL, it.sceneChoice()) } }
+
+    fun skipScene(dir: Int) {
+        if (aerial.skip(dir)) return
+        val msg = if (prefs.topShelf != HeroRepo.SRC_AERIAL) "Turn on Top Shelf > Local aerial videos for scenes"
+            else "No scene can play. Show a hidden scene in Scenery, or copy clips to Movies/GlassAerial."
+        Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+    }
+
+    /** Plays scene [id] now, switching the Top Shelf to the aerial videos first if needed. */
+    fun playScene(id: String) {
+        if (prefs.topShelf != HeroRepo.SRC_AERIAL) {
+            pendingScene = id
+            setTopShelf(HeroRepo.SRC_AERIAL)
+            return
+        }
+        if (!aerial.play(id)) Toast.makeText(ctx, "This scene cannot play now", Toast.LENGTH_SHORT).show()
+    }
+
+    /** The scene's name for a few seconds (also in cinema mode); while the Top Shelf is focused, with the keys to use. */
+    private fun showSceneName(clip: AerialClip) {
+        if (currentRow != 0 || !resumed || setup.isOpen) return
+        if (hero.isFocused) sceneLabel.show(clip.name, SCENE_HINT, 0)
+        else if (prefs.sceneLabels) sceneLabel.show(clip.name, null, SCENE_LABEL_MS)
+    }
+
+    fun openSceneBrowser(fromSettings: Boolean = false) {
+        exitCinema(instant = true)
+        if (cc.isOpen) cc.close(instant = true)
+        if (settings.isOpen) settings.close(instant = true)
+        if (folderPanel.isOpen) folderPanel.close(instant = true)
+        leaveMove()
+        if (editMode) exitEdit()
+        browserFromSettings = fromSettings
+        browserReturn = focused()
+        // Scenery shows on the home row.
+        if (currentRow != 0) { FocusAnim.forceInstant = true; try { focusDock() } finally { FocusAnim.forceInstant = false } }
+        sceneLabel.hide(instant = true)
+        blockHome(true)
+        browser.open()
+        updateHeroRunning()
+    }
+
+    fun onSceneBrowserClosed() {
+        syncHomeBlock()
+        if (browserFromSettings) { browserFromSettings = false; openSettings(); return }
+        val back = browserReturn
+        browserReturn = null
+        if (!settings.isOpen && !folderPanel.isOpen) {
+            // Back where it was (on the home row: the browser left the drawer), else the Top Shelf with its scene name.
+            when {
+                back is TileView && back.isAttachedToWindow && (back.tag as? Int) == 0 -> back.requestFocus()
+                aerial.isActive && hero.isFocusable -> hero.requestFocus()
+                else -> focusDock()
+            }
+        }
+        updateHeroRunning()
+    }
+
+    // ---------- Folders ----------
+
+    fun folderName(id: String): String? = prefs.folders.firstOrNull { it.id == id }?.name
+
+    /** The folder's installed, unhidden apps, in folder order. */
+    fun folderApps(id: String): List<AppEntry> {
+        val byPkg = apps.associateBy { it.pkg }
+        return (folderMembers[id] ?: emptyList()).mapNotNull { byPkg[it] }
+    }
+
+    /** Apps the folder's picker offers: its own first, then loose apps, then apps in other folders (with that folder's name). */
+    fun folderCandidates(id: String): List<Pair<AppEntry, String?>> {
+        val hidden = prefs.hidden
+        val owner = HashMap<String, String>()
+        prefs.folders.forEach { f -> if (f.id != id) f.members.forEach { owner[it] = f.name } }
+        val mine = folderApps(id)
+        val mineSet = mine.map { it.pkg }.toSet()
+        val rest = apps.filter { it.pkg !in hidden && it.pkg !in mineSet }
+        return mine.map { it to null } + rest.filter { it.pkg !in owner }.map { it to null } +
+            rest.filter { it.pkg in owner }.map { it to owner[it.pkg] }
+    }
+
+    /**
+     * Sets folder [id]'s shown apps to [pkgs]. Apps moving in leave the top row (the folder takes the first one's
+     * place there), the drawer order and any other folder; apps taken out return to the drawer next to the folder.
+     * Members that are hidden or not installed stay members.
+     */
+    fun setFolderMembers(id: String, pkgs: List<String>) {
+        val folders = prefs.folders
+        val f = folders.firstOrNull { it.id == id } ?: return
+        val visible = folderMembers[id] ?: emptyList()
+        val picked = pkgs.filter { Folders.isValidPackage(it) }.distinct()
+        val members = (picked + f.members.filter { it !in visible }).distinct().take(Folders.MAX_MEMBERS)
+        val removed = visible.filter { it !in picked }
+        prefs.folders = folders.map { g -> if (g.id == id) g.copy(members = members) else g.copy(members = g.members - picked.toSet()) }
+        val dock = ArrayList(dockPkgs)
+        var dockChanged = false
+        for (pkg in picked) {
+            val i = dock.indexOf(pkg)
+            if (i < 0) continue
+            if (id !in dock) dock[i] = id else dock.removeAt(i)
+            dockChanged = true
+        }
+        if (dockChanged) prefs.dock = dock
+        prefs.order?.let { o ->
+            var order = o.filter { it !in picked }
+            if (removed.isNotEmpty()) {
+                val at = order.indexOf(id).let { if (it < 0) 0 else it + 1 }
+                order = order.take(at) + removed + order.drop(at)
+            }
+            prefs.order = order
+        }
+        reloadDock()
+        syncOther()
+    }
+
+    fun removeFromFolder(id: String, pkg: String) = setFolderMembers(id, (folderMembers[id] ?: emptyList()) - pkg)
+
+    private fun addToFolder(id: String, pkg: String) {
+        setFolderMembers(id, (folderMembers[id] ?: emptyList()) + pkg)
+        tileOf(id)?.requestFocus()
+        Toast.makeText(ctx, "Added to ${folderName(id) ?: "the folder"}", Toast.LENGTH_SHORT).show()
+    }
+
+    fun renameFolder(id: String, name: String) {
+        prefs.folders = prefs.folders.map { if (it.id == id) it.copy(name = Folders.cleanName(name).ifEmpty { it.name }) else it }
+        reloadDock()
+        syncOther()
+    }
+
+    /** Removes the folder; its apps go back to the drawer where the folder was. */
+    fun removeFolder(id: String) {
+        val (rest, order) = HomeLayout.removeFolder(prefs.folders, id, prefs.order)
+        prefs.folders = rest
+        if (prefs.order != null) prefs.order = order
+        if (id in dockPkgs) prefs.dock = dockPkgs.filter { it != id }
+        reloadDock()
+        syncOther()
+        focusDock()
+    }
+
+    private fun confirmRemoveFolder(id: String) {
+        val name = folderName(id) ?: return
+        card("Remove \u201C$name\u201D?", listOf("Cancel" to {}, "Remove folder" to { removeFolder(id) }),
+            "Its apps go back to the app list. No app is uninstalled.")
+    }
+
+    /** A new folder, named "Folder" (then 2, 3...), in [with]'s place if given; opens it to be named. */
+    fun createFolder(with: String? = null) {
+        val folders = prefs.folders
+        if (folders.size >= Folders.MAX_FOLDERS) {
+            Toast.makeText(ctx, "GlassOS holds ${Folders.MAX_FOLDERS} folders. Remove one first.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val id = Folders.newId(folders.map { it.id })
+        var next = folders + AppFolder(id, Folders.defaultName(folders), emptyList())
+        if (with != null) next = HomeLayout.addToFolder(next, id, with)
+        prefs.folders = next
+        if (with != null && with in dockPkgs) prefs.dock = dockPkgs.map { if (it == with) id else it }
+        prefs.order?.let { o ->
+            val i = if (with == null) -1 else o.indexOf(with)
+            prefs.order = if (i >= 0) o.toMutableList().apply { set(i, id) } else listOf(id) + o
+        }
+        reloadDock()
+        syncOther()
+        openFolder(id, rename = true, isNew = true)
+    }
+
+    /** Move menu: a folder for [pkg], or a new one. */
+    private fun chooseFolder(pkg: String) {
+        val label = entries[pkg]?.label ?: pkg
+        val items = prefs.folders.map { f -> f.name to { addToFolder(f.id, pkg) } } + ("New folder" to { createFolder(pkg) })
+        card("Add \u201C$label\u201D to", items)
+    }
+
+    fun openFolder(id: String, rename: Boolean = false, isNew: Boolean = false) {
+        if (folderName(id) == null) return
+        exitCinema(instant = true)
+        if (cc.isOpen) cc.close(instant = true)
+        if (settings.isOpen) settings.close(instant = true)
+        if (browser.isOpen) browser.close(instant = true)
+        leaveMove()
+        if (editMode) exitEdit()
+        blockHome(true)
+        folderPanel.open(id, rename, isNew)
+        updateHeroRunning()
+    }
+
+    fun onFolderClosed(id: String?) {
+        syncHomeBlock()
+        if (!settings.isOpen && !browser.isOpen && !appMenu.isOpen) (id?.let { tileOf(it) })?.requestFocus() ?: focusDock()
+        updateHeroRunning()
+    }
+
+    // ---------- Cinema mode (idle) ----------
+
+    /** Only the real home (not the overlay after Home), in front, uncovered and not being edited, goes to cinema. */
+    private fun cinemaAllowed() = ctx is Activity && !released && prefs.cinemaDelaySec > 0 && resumed && root.hasWindowFocus() &&
+        !settings.isOpen && !cc.isOpen && !setup.isOpen && !appMenu.isOpen && !browser.isOpen && !folderPanel.isOpen &&
+        !editMode && movingPkg == null
+
+    /** One pending check at most; it reschedules itself for the time left rather than on every key press. */
+    private fun syncIdle() {
+        if (!::root.isInitialized) return
+        main.removeCallbacks(idleCheck)
+        if (!cinema && cinemaAllowed()) main.postDelayed(idleCheck, (prefs.cinemaDelaySec * 1000L - (SystemClock.uptimeMillis() - lastInput)).coerceAtLeast(500))
+    }
+
+    private fun checkIdle() {
+        if (cinema || !cinemaAllowed()) return
+        val left = prefs.cinemaDelaySec * 1000L - (SystemClock.uptimeMillis() - lastInput)
+        if (left > 0) main.postDelayed(idleCheck, left) else enterCinema()
+    }
+
+    private fun enterCinema() {
+        cinema = true
+        cinemaFocus = focused()
+        // The scenery shows on the home row: leave the drawer without sound or animation (focus returns on wake).
+        if (currentRow != 0) { FocusAnim.forceInstant = true; try { focusDock() } finally { FocusAnim.forceInstant = false } }
+        sceneLabel.hide()
+        home.animate().cancel()
+        home.animate().alpha(0f).setDuration(Effects.fade(900)).withLayer().start()
+        if (prefs.cinemaClock) {
+            cinemaClock.visibility = View.VISIBLE
+            cinemaClock.animate().cancel()
+            cinemaClock.animate().alpha(1f).setDuration(Effects.fade(900)).start()
+        }
+        WLog.i("cinema on")
+    }
+
+    private fun exitCinema(instant: Boolean) {
+        if (!::root.isInitialized || !cinema) return
+        cinema = false
+        lastInput = SystemClock.uptimeMillis()
+        home.animate().cancel()
+        cinemaClock.animate().cancel()
+        if (instant) {
+            home.alpha = 1f
+            cinemaClock.alpha = 0f; cinemaClock.visibility = View.GONE
+        } else {
+            home.animate().alpha(1f).setDuration(Effects.fade(250)).withLayer().start()
+            cinemaClock.animate().alpha(0f).setDuration(Effects.fade(200)).withEndAction { if (!cinema) cinemaClock.visibility = View.GONE }.start()
+        }
+        val f = cinemaFocus
+        cinemaFocus = null
+        if (f != null && f !== focused() && f.isAttachedToWindow && f.isShown) f.requestFocus()
+        syncIdle()
+    }
+
+    /** Wakes cinema mode on the first key, which is consumed (with its repeats and release). Volume keys still work. */
+    private fun cinemaKey(e: KeyEvent): Boolean {
+        val code = e.keyCode
+        if (eatKey != -1) {
+            if (code == eatKey) {
+                // A fresh press of the same key (its release was lost) is a new press, not part of the waking one.
+                if (e.action == KeyEvent.ACTION_DOWN && e.repeatCount == 0 && !cinema) eatKey = -1
+                else { if (e.action == KeyEvent.ACTION_UP) eatKey = -1; return true }
+            }
+        }
+        val volume = code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN || code == KeyEvent.KEYCODE_VOLUME_MUTE
+        if (cinema) {
+            exitCinema(instant = false)
+            if (volume) return false
+            eatKey = if (e.action == KeyEvent.ACTION_DOWN) code else -1
+            return true
+        }
+        lastInput = SystemClock.uptimeMillis()
+        return false
+    }
+
+    // ---------- Night mode ----------
+
+    /** Dims the scenery and the grid inside the user's night window (local time). Launcher UI only: never the TV's brightness. */
+    fun applyNight() {
+        if (!::nightDim.isInitialized) return
+        val cal = java.util.Calendar.getInstance()
+        val minute = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
+        val on = prefs.nightEnabled && NightSchedule(prefs.nightStart, prefs.nightEnd).isNight(minute)
+        val a = NIGHT_ALPHA[prefs.nightLevel.coerceIn(0, NIGHT_ALPHA.size - 1)]
+        if (on == nightOn && (!on || nightLevelShown == a)) return
+        nightOn = on
+        nightLevelShown = a
+        nightDim.setBackgroundColor(android.graphics.Color.argb((a * 255).toInt(), 0, 0, 0))
+        nightDim.visibility = if (on) View.VISIBLE else View.GONE
+        WLog.i("night ${if (on) "on" else "off"}")
+    }
+
+    // ---------- Settings applied at once, backups ----------
+
+    /** Display settings changed (effects, night, cinema): apply them now. */
+    fun settingsChanged() {
+        Effects.load(prefs)
+        nightLevelShown = -1f
+        applyNight()
+        if (prefs.cinemaDelaySec == 0) exitCinema(instant = true)
+        syncIdle()
+        invalidateDeep(root)
+        HomeShare.main?.takeIf { it !== this }?.let { it.nightLevelShown = -1f; it.applyNight(); invalidateDeep(it.root) }
+    }
+
+    /** Everything a restored backup may have changed. */
+    private fun reloadAll() {
+        settingsChanged()
+        reloadDock()
+        setWallpaper(prefs.scene, save = false)
+        HomeShare.main?.takeIf { it !== this }?.let { it.reloadDock(); it.setWallpaper(it.prefs.scene, save = false) }
+        if (settings.isOpen) settings.refresh()
+    }
+
+    /** Settings > Back up settings. Asks once for shared storage, which keeps the file when GlassOS is uninstalled. */
+    fun exportBackup() {
+        val a = ctx as? Activity
+        if (a != null && Build.VERSION.SDK_INT >= 23 && !Backup.canWriteShared(ctx)) {
+            a.requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), REQ_WRITE)
+            return
+        }
+        writeBackup()
+    }
+
+    /** The storage answer came back (granted or not): write the backup wherever possible. */
+    fun onWritePermission() { writeBackup() }
+
+    private fun writeBackup() {
+        background {
+            val result: Any = try {
+                Backup.write(ctx, BackupCodec.encode(prefs.toBackup(), BuildConfig.VERSION_NAME, System.currentTimeMillis()))
+            } catch (e: Exception) { e }
+            ui {
+                if (result is Backup.Saved) {
+                    val path = Backup.display(result.file)
+                    prefs.lastBackup = path
+                    if (settings.isOpen) settings.refresh()
+                    card("Settings backed up", ok, "Saved to\n$path\n\n" + if (result.shared)
+                        "To restore it on another TV, copy it to that TV's Documents/${Backup.FOLDER} folder and choose Restore from backup."
+                    else "This folder is deleted if GlassOS is uninstalled. Allow storage access (Settings > Permissions) to save to Documents/${Backup.FOLDER} instead.")
+                } else card("Backup failed", ok, (result as Exception).message ?: result.javaClass.simpleName)
+            }
+        }
+    }
+
+    /** Settings > Restore from backup: the backups found, newest first. */
+    fun importBackup() {
+        background {
+            val files = try { Backup.list(ctx).take(12) } catch (e: Exception) { emptyList() }
+            val canRead = Grants.storage(ctx)
+            ui {
+                if (files.isEmpty()) {
+                    card("No backups found", ok, "Put a backup file (.json) in\n/sdcard/Documents/${Backup.FOLDER}\nand try again." +
+                        if (canRead) "" else "\n\nGlassOS also needs storage access to read it (Settings > Permissions).")
+                } else {
+                    card("Restore from backup", files.map { f -> f.name to { confirmImport(f) } } + ("Cancel" to {}),
+                        "Newest first, from Documents/${Backup.FOLDER}.")
+                }
+            }
+        }
+    }
+
+    private fun confirmImport(f: java.io.File) {
+        background {
+            val r = Backup.read(f)
+            ui {
+                when (r) {
+                    is BackupResult.Error -> card("Cannot restore this backup", ok, f.name + "\n\n" + r.message)
+                    is BackupResult.Ok -> card("Restore this backup?", listOf("Cancel" to {}, "Restore" to { restore(r.data) }),
+                        f.name + (if (r.exportedAt.isNotEmpty()) "\nMade ${r.exportedAt.replace('T', ' ').removeSuffix("Z")} UTC" else "") +
+                            "\n\nReplaces: ${r.data.summary()}.\nApps and scenes not on this TV are kept for later. Your name, TMDB key, " +
+                            "permissions and home settings stay as they are.")
+                }
+            }
+        }
+    }
+
+    private fun restore(d: BackupData) {
+        // commit() changes the settings in memory even when writing them to storage fails: show what is in use either way.
+        val saved = prefs.apply(d)
+        reloadAll()
+        if (saved) card("Settings restored", ok, d.summary().replaceFirstChar { it.uppercase() } + ".")
+        else card("Restored, but not saved", ok, "The restored settings are in use now, but they could not be written to " +
+            "storage, so GlassOS may go back to the earlier settings when it restarts. Choose Restore from backup again to retry.")
+    }
+
     // ---------- State carried between the overlay and MainActivity ----------
 
     fun state(): HomeState {
@@ -1045,9 +1592,13 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         leaveMove()
         if (editMode) exitEdit()
         lastDockIndex = s.lastDockIndex
+        exitCinema(instant = true)
         FocusAnim.forceInstant = true
         try {
             if (cc.isOpen) cc.close(instant = true)
+            if (appMenu.isOpen) appMenu.close()
+            if (browser.isOpen) browser.close(instant = true)
+            if (folderPanel.isOpen) folderPanel.close(instant = true)
             if (s.settingsOpen && !settings.isOpen) { blockHome(true); settings.open(instant = true) }
             else if (!s.settingsOpen && settings.isOpen) settings.close(instant = true)
             if (!s.settingsOpen) {
@@ -1088,7 +1639,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             if (e.repeatCount > 0) return true
             eatOkUp = false
         }
-        if (settings.isOpen || cc.isOpen || appMenu.isOpen) return false
+        if (settings.isOpen || cc.isOpen || appMenu.isOpen || browser.isOpen || folderPanel.isOpen) return false
         val focusTile = focused() as? TileView
         if (movingPkg != null) {
             // The hold that started the move keeps repeating until OK is let go: only a new press drops.
@@ -1146,8 +1697,10 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     private fun onMenu() {
         when {
             cc.isOpen -> cc.close()
-            settings.isOpen -> settings.close()
             appMenu.isOpen -> appMenu.close()
+            folderPanel.isOpen -> folderPanel.onMenu()
+            browser.isOpen -> browser.onMenu()
+            settings.isOpen -> settings.close()
             movingPkg != null -> openAppMenu()
             editMode -> removeFocusedFromDock()
             else -> openControlCenter()
@@ -1158,8 +1711,10 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         when {
             setup.isOpen -> setup.back()
             cc.isOpen -> cc.back()
-            settings.isOpen -> settings.close()
             appMenu.isOpen -> appMenu.close()
+            folderPanel.isOpen -> folderPanel.back()
+            browser.isOpen -> browser.back()
+            settings.isOpen -> settings.close()
             movingPkg != null -> cancelMove()
             editMode -> exitEdit()
             currentRow > 0 -> focusDock()
@@ -1169,12 +1724,17 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
 
     /** Home pressed again while this home is shown: like tvOS, close what is open and keep focus. */
     fun onHomeAgain(fromWatcher: Boolean) {
+        exitCinema(instant = false)
         if (setup.isOpen) return
-        if (fromWatcher && !settings.isOpen && !cc.isOpen && !editMode && movingPkg == null && !appMenu.isOpen) {
+        if (fromWatcher && !settings.isOpen && !cc.isOpen && !editMode && movingPkg == null && !appMenu.isOpen &&
+            !browser.isOpen && !folderPanel.isOpen) {
             if (focused() == null) focusDock()
             return
         }
         if (cc.isOpen) cc.close(instant = true)
+        if (appMenu.isOpen) appMenu.close()
+        if (browser.isOpen) browser.close(instant = true)
+        if (folderPanel.isOpen) folderPanel.close(instant = true)
         if (settings.isOpen) settings.close()
         leaveMove()
         if (editMode) exitEdit()
@@ -1186,6 +1746,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     /** Root view: sends keys to the home screen first, and Back to [onBack]. */
     private inner class KeyRoot(c: Context) : FrameLayout(c) {
         override fun dispatchKeyEvent(e: KeyEvent): Boolean {
+            if (cinemaKey(e)) return true
             if (onKey(e)) return true
             if (e.keyCode == KeyEvent.KEYCODE_BACK && ctx !is Activity) {
                 if (e.action == KeyEvent.ACTION_UP && !e.isCanceled) onBack()
@@ -1193,9 +1754,34 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             }
             return super.dispatchKeyEvent(e)
         }
+
+        override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+            if (e.actionMasked == MotionEvent.ACTION_DOWN && cinema) { exitCinema(instant = false); return true }
+            lastInput = SystemClock.uptimeMillis()
+            return super.dispatchTouchEvent(e)
+        }
+
+        override fun dispatchGenericMotionEvent(e: MotionEvent): Boolean {
+            if (cinema) { exitCinema(instant = false); return true }
+            lastInput = SystemClock.uptimeMillis()
+            return super.dispatchGenericMotionEvent(e)
+        }
+
+        override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+            super.onWindowFocusChanged(hasWindowFocus)
+            // Something covers the home (a system dialog, Alexa, the screensaver): no cinema under it.
+            if (!hasWindowFocus) { exitCinema(instant = true); eatKey = -1 }
+            lastInput = SystemClock.uptimeMillis()
+            syncIdle()
+        }
     }
 
     companion object {
         const val COLS = 6
+        private const val SCENE_HINT = "Left or Right: change scene  \u00B7  OK: Scenery"
+        /** Night mode's dark layer at each level (low, medium, strong). */
+        private val NIGHT_ALPHA = floatArrayOf(0.28f, 0.42f, 0.56f)
+        private const val REQ_WRITE = 9
+        private const val SCENE_LABEL_MS = 5000L
     }
 }

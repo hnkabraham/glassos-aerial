@@ -1,5 +1,41 @@
 # Changelog
 
+## GlassOS Aerial 1.1.0-aerial.1 (fork, 2026-10-24)
+
+GlassOS Aerial is a fork of GlassOS (package `io.github.abhishekkaisar.glassos.aerial`, version code 4). Entries
+from 1.0.2-beta down are upstream GlassOS.
+
+- **Scenery browser** (Settings > Scenery, Control Center > Scenery, OK on the Top Shelf): poster thumbnails of the
+  clips in Movies/GlassAerial, decoded at thumbnail size off the UI thread. OK plays a scene; Menu marks it a
+  favourite or hides it (hidden scenes stay listed, faded, to show again); Next scene, Previous, Shuffle,
+  Favourites only, Scene names and Show all scenes. Left and Right on the Top Shelf change the scene.
+- **Shuffle without repeats**: every eligible clip plays once per round, and a round never starts with the clip
+  that ended the last one. Clips that become eligible mid-round join it; hidden ones never play. The play order,
+  clip and position are kept across restarts (the earlier clip and position settings carry over).
+- **Scene names**: the clip's name and place show top left for a few seconds when it changes, from the file name
+  (numbers, underscores and quality tags removed) or an optional `scenes.json`.
+- Empty, all-hidden, missing or undecodable libraries fall back to the poster or the chosen still background.
+- **Cinema mode**: after 1 minute without input (30 s to 30 min, or off) the home fades to its scenery, with an
+  optional clock. The first button press only wakes it and is consumed; volume still works. Only while the home is
+  in front and uncovered; never keeps the TV awake or changes system settings.
+- **Night mode**: dims the scenery and app grid between two times (past midnight too), at three strengths. Launcher
+  dimming only, not the TV's brightness; follows the clock and time zone without a timer of its own.
+- **App folders** on the top row and in the drawer: create (from an app's move menu or Settings), rename, add and
+  remove apps, open, remove (apps go back to the app list). Hidden and uninstalled members stay members.
+- **Settings backup and restore** in Documents/GlassOS-Aerial: versioned JSON, written atomically, fully validated
+  before anything is applied, with clear errors. Layout, folders, display and scenery choices only; no credentials,
+  personal details, permissions, routing, playback positions or device data.
+- **Reduce transparency** (solid panels, no backdrop sampling) and **Reduce motion** (no springs, tilts, wiggles or
+  sliding panels). Both off by default.
+- Option cards can show a message and scroll; the storage grant also covers writing backups.
+- JVM unit tests for the playlist, scene names and metadata, night windows, folder placement and backups; CI runs
+  them.
+
+## 1.0.2-aerial.1 (fork)
+
+- Local aerial videos as a Top Shelf source: silent, hardware-decoded clips from Movies/GlassAerial, released when
+  Home is left and resumed where they stopped.
+
 ## 1.0.2-beta (2026-10-23)
 
 - Hold OK on any app to move it, like Apple TV: the tile lifts and wiggles, the arrows move it across the top row

@@ -107,7 +107,7 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
         isOpen = true
         visibility = View.VISIBLE
         alpha = 0f
-        animate().alpha(1f).setDuration(220).start()
+        animate().alpha(1f).setDuration(Effects.fade(220)).start()
         show(start)
     }
 
@@ -378,7 +378,8 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
     private fun appsStep() {
         title.text = "Your top row"
         subtitle.text = "Choose up to ${HomeScreen.COLS} apps for the shelf. You can change them later."
-        val apps = allApps().filter { it.pkg !in hidden }
+        // Folders count as one item on the top row; apps inside a folder are reached through it.
+        val apps = home.topLevelEntries().ifEmpty { allApps() }.filter { it.pkg !in hidden }
         if (picked.isEmpty()) picked.addAll(AppRepo.defaultDock(apps))
         picked.retainAll(apps.map { it.pkg }.toSet())
         fun refreshCount() { subtitle.text = "Choose up to ${HomeScreen.COLS} apps for the shelf (${picked.size} chosen). You can change them later." }
@@ -451,16 +452,7 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
     }
 
     /** The app's banner, or its icon centred on its own colour, at thumbnail size. */
-    private fun tileArt(a: AppEntry, w: Int, h: Int): Bitmap? {
-        val art = a.art ?: return null
-        if (a.isBanner) return art
-        val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val c = Canvas(b)
-        c.drawColor(a.color)
-        val s = h * 0.62f
-        c.drawBitmap(art, null, RectF((w - s) / 2, (h - s) / 2, (w + s) / 2, (h + s) / 2), Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
-        return b
-    }
+    private fun tileArt(a: AppEntry, w: Int, h: Int): Bitmap? = AppArt.thumb(a, w, h)
 
     private var grantRows = ArrayList<Pair<Grants.Grant, RowView>>()
     private var granting = false
@@ -681,8 +673,9 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
     }
 
     private fun aboutStep() {
-        title.text = "About GlassOS"
-        subtitle.text = "Version ${BuildConfig.VERSION_NAME}. Free software under the GNU GPL v3. Inspired by tvOS."
+        title.text = "About GlassOS Aerial"
+        subtitle.text = "Version ${BuildConfig.VERSION_NAME}. GlassOS Aerial is a fork of GlassOS by Abhishek Kaisar " +
+            "(github.com/AbhishekKaisar/glassos-tv), with local aerial scenery, folders and backups. Free software under the GNU GPL v3. Inspired by tvOS."
         val box = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
         box.addView(ImageView(context).apply { setImageResource(R.drawable.tmdb_logo); scaleType = ImageView.ScaleType.FIT_CENTER },
             LinearLayout.LayoutParams(dpi(150f), dpi(44f)))

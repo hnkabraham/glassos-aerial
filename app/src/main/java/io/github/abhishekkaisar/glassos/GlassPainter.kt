@@ -17,6 +17,11 @@ import android.view.View
  * Each painter owns its own shaders, because on API 25 shader matrices are shared by reference.
  */
 class GlassPainter {
+    companion object {
+        /** Panel colour under reduce transparency: the night colour, a little lifted. */
+        const val SOLID = 0xFF1A1E29.toInt()
+    }
+
     var tint = 0.14f
     var tintColor = Color.WHITE
     var dark = 0f
@@ -63,6 +68,7 @@ class GlassPainter {
     }
 
     fun draw(c: Canvas, v: View, r: RectF, radius: Float) {
+        if (Effects.reduceTransparency) { drawSolid(c, r, radius); return }
         val a = Backdrop.a
         if (a.bmp != null) {
             viewToWindow(v, m)
@@ -76,6 +82,23 @@ class GlassPainter {
         }
         if (cacheStatic) { drawStatic(c, r, radius); return }
         drawOverlay(c, r, radius)
+    }
+
+    /**
+     * Reduce transparency: an opaque panel (lighter for more tint, as the glass would look) and the rim, with no
+     * backdrop sampling, grain or sheen. It does not change with the art behind it, so it never needs redrawing for it.
+     */
+    private fun drawSolid(c: Canvas, r: RectF, radius: Float) {
+        fill.color = lerpColor(SOLID, Color.WHITE, (tint * 0.6f).coerceIn(0f, 0.18f))
+        c.drawRoundRect(r, radius, radius, fill)
+        edge.shader = null
+        edge.strokeWidth = stroke
+        edge.color = alphaOf(Color.WHITE, (0.10f + highlight * 0.35f).coerceAtMost(0.4f))
+        val h = stroke / 2f
+        inset.set(r.left + h, r.top + h, r.right - h, r.bottom - h)
+        c.drawRoundRect(inset, radius - h, radius - h, edge)
+        // The gradient rim is rebuilt the next time glass is drawn.
+        key = ""
     }
 
     private fun drawStatic(c: Canvas, r: RectF, radius: Float) {

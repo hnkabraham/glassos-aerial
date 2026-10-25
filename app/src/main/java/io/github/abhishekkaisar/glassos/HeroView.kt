@@ -40,6 +40,10 @@ class HeroView(ctx: Context, private val loader: (Slide) -> Loaded?) : View(ctx)
     var kenBurns = false
     var onOpen: ((Slide) -> Unit)? = null
     var onFocusDown: (() -> Unit)? = null
+    /** Left (-1) and Right (1) while focused; returns true when handled (the aerial scenery steps clips instead). */
+    var onStep: ((Int) -> Boolean)? = null
+    /** OK while focused; returns true when handled (the aerial scenery opens its browser instead). */
+    var onPress: (() -> Boolean)? = null
 
     private val cache = LinkedHashMap<String, Loaded>()
     private var cur: Loaded? = null
@@ -396,11 +400,11 @@ class HeroView(ctx: Context, private val loader: (Slide) -> Loaded?) : View(ctx)
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_LEFT -> { step(-1); return true }
-            KeyEvent.KEYCODE_DPAD_RIGHT -> { step(1); return true }
+            KeyEvent.KEYCODE_DPAD_LEFT -> { if (onStep?.invoke(-1) != true) step(-1); return true }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> { if (onStep?.invoke(1) != true) step(1); return true }
             KeyEvent.KEYCODE_DPAD_DOWN -> { onFocusDown?.invoke(); return true }
             KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                if (event.repeatCount == 0) cur?.slide?.let { onOpen?.invoke(it) }
+                if (event.repeatCount == 0 && onPress?.invoke() != true) cur?.slide?.let { onOpen?.invoke(it) }
                 return true
             }
         }
@@ -459,6 +463,8 @@ class BlurScrim(ctx: Context) : View(ctx) {
     private val tint = Paint().apply { color = 0x66000008 }
 
     override fun onDraw(c: Canvas) {
+        // Reduce transparency: a plain dark backdrop instead of the blurred art.
+        if (Effects.reduceTransparency) { c.drawColor(0xFF0B0D14.toInt()); return }
         val a = Backdrop.a
         val b = Backdrop.b
         a.bmp?.let { pa.alpha = 255; c.drawBitmap(it, a.m, pa) }
