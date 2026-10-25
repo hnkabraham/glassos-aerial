@@ -488,10 +488,12 @@ class FolderPanel(private val home: HomeScreen) : FrameLayout(home.ctx) {
         val id = folderId ?: return
         val pkg = t.wallId
         val label = home.folderApps(id).firstOrNull { it.pkg == pkg }?.label ?: pkg
-        home.card(label, listOf(
+        val items = arrayListOf<Pair<String, () -> Unit>>(
             "Open" to { val p = pkg; close(instant = true) { home.launch(p, null) } },
             "Remove from folder" to { home.removeFromFolder(id, pkg); show(Mode.MEMBERS) }
-        ))
+        )
+        if (Platform.canUninstall(context, pkg)) items.add("Uninstall" to { home.requestUninstall(pkg) })
+        home.card(label, items)
     }
 
     /** The app list changed (install, uninstall, hide): redraw what is shown. */
@@ -560,7 +562,7 @@ class FolderPanel(private val home: HomeScreen) : FrameLayout(home.ctx) {
         title.text = name
         val apps = home.folderApps(id)
         subtitle.text = if (apps.isEmpty()) "This folder is empty. Choose Add apps to fill it."
-            else "${apps.size} ${if (apps.size == 1) "app" else "apps"}. OK opens an app; Menu takes it out of the folder."
+            else "${apps.size} ${if (apps.size == 1) "app" else "apps"}. OK opens an app; hold OK or press Menu for options."
         grid(apps.map { it to null }, { false }) { a, _ -> val p = a.pkg; close(instant = true) { home.launch(p, null) } }
         val add = navButton("Add apps") { show(Mode.PICK) }
         navButton("Rename") { show(Mode.RENAME) }
@@ -649,7 +651,9 @@ class FolderPanel(private val home: HomeScreen) : FrameLayout(home.ctx) {
                 bitmap = AppArt.thumb(a, tw, th)
                 this.chosen = chosen(a.pkg)
             }
+            t.contentDescription = a.label
             t.onClick = { click(a, t) }
+            if (mode == Mode.MEMBERS) t.setOnLongClickListener { home.heldAppMenu { onMenu() }; true }
             row!!.addView(t, LinearLayout.LayoutParams(-2, -2).apply { if (i % cols > 0) leftMargin = dpi(18f) })
             tiles.add(t)
         }

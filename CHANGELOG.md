@@ -1,5 +1,12 @@
 # Changelog
 
+## GlassOS Aerial 1.3.0-aerial.1 (fork, 2026-10-24)
+
+- Hold OK on an app to open its actions in either app-order mode. Uninstall opens the TV’s native confirmation; Cancel keeps the app and layout. Manual rearranging now starts with **Move** in this menu.
+- Folder members also expose uninstall through held OK or Menu. Folder removal still keeps apps installed.
+- System apps, system-app updates, GlassOS itself and the selected native Home handler are excluded from the uninstall shortcut.
+- Uses only the normal request-uninstall permission. Package-removal broadcasts refresh the app grid; no silent deletion or device-level changes.
+
 ## GlassOS Aerial 1.2.0-aerial.1 (fork, 2026-10-24)
 
 - **Most-used app order:** optional sorting of the top row, drawer and folder contents by foreground time from roughly the last 30 days. Folders use the combined time of their visible members. Ties keep the manual order.
