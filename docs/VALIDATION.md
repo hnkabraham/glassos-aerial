@@ -10,7 +10,7 @@ New coverage includes collection selection and midnight-wrapping schedules, inva
 
 ## Mac companion
 
-The real browser UI was exercised against an Android TV API 31 emulator. A generated video with audio was uploaded through the file picker, encoded by FFmpeg, fully decoded for validation and inspected as silent H.264 with a JPEG poster. Collection filtering, title/category edits, daily schedule editing and persistence, checked sync, fresh backup export and restore handoff were exercised. Cancel on the TV preserved its settings; confirming Restore applied the copied backup.
+The real browser UI was exercised against an Android TV API 31 emulator. A generated video with audio was uploaded through the file picker, encoded by FFmpeg, fully decoded for validation and inspected as silent H.264 with a JPEG poster. Collection filtering, title/category edits, daily schedule editing and persistence, checked sync, fresh backup export and restore handoff were exercised. Cancel on the TV preserved its settings; confirming Restore applied the copied backup. Final browser checks verified all 20 saved collection previews loaded after reopening and Refresh; preview requests are bounded and retry transient failures.
 
 These captures use generated test videos and a neutral test-device name. Private addresses, tokens, device logs, backups and third-party video files are excluded from the repository.
 

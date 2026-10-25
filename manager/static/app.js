@@ -15,6 +15,37 @@ let state = null,
   backupSignature = "",
   scheduleLoaded = false;
 const posters = new Map();
+const posterRequests = new Map();
+const posterLanes = Array.from({ length: 4 }, () => Promise.resolve());
+let nextPosterLane = 0;
+
+function posterFor(id) {
+  if (posters.has(id)) return Promise.resolve(posters.get(id));
+  if (posterRequests.has(id)) return posterRequests.get(id);
+  const lane = nextPosterLane++ % posterLanes.length;
+  const task = posterLanes[lane].then(async () => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const response = await fetch("/api/poster/" + id, {
+          headers: { "X-GlassOS-Token": token },
+        });
+        if (!response.ok) throw Error("Preview unavailable");
+        const url = URL.createObjectURL(await response.blob());
+        posters.set(id, url);
+        return url;
+      } catch (error) {
+        if (attempt === 2) throw error;
+        await new Promise((resolve) =>
+          setTimeout(resolve, 250 * (attempt + 1)),
+        );
+      }
+    }
+  });
+  posterLanes[lane] = task.catch(() => {});
+  const pending = task.finally(() => posterRequests.delete(id));
+  posterRequests.set(id, pending);
+  return pending;
+}
 const descriptions = {
   overview: [
     "THE BIG PICTURE",
@@ -268,20 +299,17 @@ function renderScenes() {
       img = el("img");
     img.alt = s.title;
     poster.append(img);
-    if (posters.has(s.id)) img.src = posters.get(s.id);
-    else
-      fetch("/api/poster/" + s.id, { headers: { "X-GlassOS-Token": token } })
-        .then((r) => {
-          if (r.ok) return r.blob();
-        })
-        .then((blob) => {
-          if (blob) {
-            const u = URL.createObjectURL(blob);
-            posters.set(s.id, u);
-            img.src = u;
-          }
-        })
-        .catch(() => {});
+    const unavailable = () => {
+      posters.delete(s.id);
+      img.remove();
+      poster.append(el("span", "", "Preview unavailable · Refresh to retry"));
+    };
+    img.onerror = unavailable;
+    posterFor(s.id)
+      .then((url) => {
+        img.src = url;
+      })
+      .catch(unavailable);
     const label = el("label"),
       check = el("input");
     check.type = "checkbox";
@@ -415,7 +443,10 @@ $("#device").onchange = (e) => {
   localStorage.setItem("glass-device", selectedDevice);
   render();
 };
-$("#refresh").onclick = refresh;
+$("#refresh").onclick = () => {
+  sceneSignature = "";
+  refresh();
+};
 $("#add-device").onclick = () => $("#device-dialog").showModal();
 $("#toggle-log").onclick = () => ($("#job-log").hidden = !$("#job-log").hidden);
 $("#device-form").onsubmit = async (e) => {
