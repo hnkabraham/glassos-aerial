@@ -1,4 +1,47 @@
-# GlassOS Aerial 1.2.0-aerial.1 validation
+# GlassOS Aerial 1.3.0-aerial.1 validation
+
+Validated on October 24, 2026. Package `io.github.abhishekkaisar.glassos.aerial`, version code 6.
+
+## Build and automated checks
+
+All **57 JVM tests passed**, with no failures or errors. Debug and optimized signed release builds passed; lint reported **0 errors, 113 warnings**. The release retains the previous signing certificate and has no embedded TMDB key. The standard `REQUEST_DELETE_PACKAGES` permission requests the OS confirmation, with no silent-delete privilege.
+
+## Remote UI on Android TV API 31
+
+- Held OK opens the actions menu in Manual and Most used mode; releasing the held key does not select an action.
+- Uninstall opens the system dialog for the selected disposable fixture. Back cancels, preserving its installation and all preferences. Confirming removal deletes the fixture and updates the grid without restarting GlassOS.
+- Manual > Move still moves tiles; Back restores the original layout. Uninstalling does not overwrite saved manual order.
+- A folder member supports both held OK and Menu. Confirmed removal updates the visible membership; saved membership remains available for a later reinstall. Folder tiles offer Remove folder, with no Uninstall action.
+- The system Settings app has no Uninstall action. All menu rows and the native confirmation were visually checked at 1920×1080.
+
+These are neutral emulator captures using generated clips and local fixture apps.
+
+| Before | After |
+| --- | --- |
+| ![Previous held-OK menu](validation/uninstall-before-menu.png) | ![Held-OK menu with Uninstall](validation/uninstall-after-menu.png) |
+
+| Manual mode | Folder member |
+| --- | --- |
+| ![Manual actions](validation/uninstall-manual-menu.png) | ![Folder actions](validation/uninstall-folder-menu.png) |
+
+![Native uninstall confirmation](validation/uninstall-confirmation.png)
+
+## Physical Fire TV
+
+Fire TV Stick 4K Max (2nd generation, AFTKRT), Fire OS 8.1.8.5.
+
+- Upgraded the signed build in place. The held-OK action opened Fire TV's native confirmation for a temporary local fixture; Cancel retained it, and confirmation removed it and refreshed Home.
+- The active Launcher Manager Home handler had no Uninstall action. No existing user app was removed: the final installed-package list exactly matched the initial list after the fixture was removed.
+- The launcher released its video-codec resources while the confirmation was open. Home returned to GlassOS and `OMX.MTK.VIDEO.DECODER.AVC` hardware aerial playback resumed.
+- The disabled-package list, all five Amazon privacy values (`0`), native Home handler and 20-clip library matched the pre-upgrade audit. Usage access remained allowed and Most used stayed selected.
+
+## Limits
+
+Fire OS 5/6/7, other physical models, device-admin restrictions and a missing/blocked system uninstaller were not exercised. minSdk 22 is retained. Reboot and fresh Home setup were not retested. Earlier feature validation follows.
+
+---
+
+# Earlier release: 1.2.0-aerial.1
 
 Validated on October 24, 2026. Package `io.github.abhishekkaisar.glassos.aerial`, version code 5.
 

@@ -11,6 +11,16 @@ adb connect "$TV"
 
 ## What GlassOS Aerial adds
 
+### Uninstall apps from Home
+
+Highlight an app in the top row or drawer, **hold OK**, then choose **Uninstall**. The TV opens its own confirmation dialog; confirm there to remove the app, or choose **Cancel** / press Back to keep it. The app list refreshes after successful removal. Uninstalling can delete that app’s local data; **Hide app** only removes its icon from GlassOS.
+
+The shortcut works in **Manual** and **Most used** mode. In Manual mode, hold OK and choose **Move** to rearrange an app; arrows move it, OK saves and Back cancels. Inside a folder, hold OK or press Menu on a member for its options. Folder tiles themselves offer **Remove folder**, which leaves their apps installed.
+
+Uninstall is offered only for downloaded apps, excluding GlassOS Aerial itself and the current native Home handler (such as the configured Launcher Manager). Built-in apps and updates to system apps are managed through the TV’s own Settings instead. Android may impose further restrictions, such as device-admin requirements.
+
+The launcher requests the standard [uninstall confirmation](https://developer.android.com/reference/android/content/Intent#ACTION_UNINSTALL_PACKAGE) with [REQUEST_DELETE_PACKAGES](https://developer.android.com/reference/android/Manifest.permission#REQUEST_DELETE_PACKAGES). It does not use root, self-ADB, silent deletion, or all-user removal. No permissions prompt or setup change is needed for this normal manifest permission.
+
 ### Most-used app order
 
 Choose **Settings > App order > Most used**. The six most-used top-level items move to the top row; the rest of the drawer follows in descending usage order. Folder contents sort too, and each folder ranks by its visible members' combined time. Hidden and uninstalled apps do not contribute to that folder's score. Equal scores keep the order from your saved layout. Home-handler apps (including Launcher Manager), screensavers and Fire TV Ambient Experience receive no usage score, so idle/setup time does not promote them. They remain available in the app list.
@@ -27,7 +37,7 @@ adb -s "$TV" shell appops set io.github.abhishekkaisar.glassos.aerial GET_USAGE_
 
 GlassOS does not change Amazon privacy settings or re-enable the blocked telemetry packages. Ranking history stays in memory; GlassOS does not save, log or upload it, and it is excluded from settings exports. Only the Manual/Most used preference travels in a backup. If access is denied or no usable history exists, the launcher keeps the manual layout and shows a status message in Settings.
 
-**Manual** restores the saved top row, drawer and folder-member ordering. In Most used mode, holding OK on a tile still offers folder and hide actions; choose **Use manual order** to move tiles yourself. **Edit top row** and **Top row apps** explain that they need Manual mode before changing the saved layout. Creating, removing or editing a folder updates the underlying manual membership without saving the automatic ranking over it.
+**Manual** restores the saved top row, drawer and folder-member ordering. In Most used mode, holding OK on a tile offers folder, hide and eligible uninstall actions; choose **Use manual order** to move tiles yourself. **Edit top row** and **Top row apps** explain that they need Manual mode before changing the saved layout. Creating, removing or editing a folder updates the underlying manual membership without saving the automatic ranking over it.
 
 ### Aerial scenery
 
@@ -93,12 +103,12 @@ tick while GlassOS is open, with no timer of its own. Equal start and end times 
 
 ### App folders
 
-- **Create**: hold OK on an app, press Menu, **Add to a folder** > **New folder** (the folder takes the app's
+- **Create**: hold OK on an app, choose **Add to a folder** > **New folder** (the folder takes the app's
   place), or Settings > **New app folder**. Name it with the on-screen keyboard.
-- **Open**: OK on the folder tile. OK on an app opens it; Menu on an app offers **Remove from folder**.
+- **Open**: OK on the folder tile. OK on an app opens it; holding OK or pressing Menu offers **Remove from folder** and, where available, **Uninstall**.
   **Add apps** ticks apps in or out (an app is in one folder at a time; apps from another folder move), **Rename**,
   and **Remove folder**, which puts its apps back in the app list (nothing is uninstalled).
-- A folder is one item on the top row and in the drawer: hold OK on it to move it, add it to or remove it from the
+- A folder is one item on the top row and in the drawer: hold OK on it for options to move it in Manual mode, add it to or remove it from the
   top row, rename or remove it. Folder tiles show a small grid of their apps.
 - Hidden or uninstalled apps stay members and come back in their folder when shown again or reinstalled. Every
   installed app that is not hidden is always somewhere: on the top row, in the drawer or in one folder.

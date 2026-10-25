@@ -773,11 +773,15 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             "Most used is arranging your apps. Switch to Manual to edit the saved top row and app order.")
     }
 
-    private fun openSortedAppMenu(pkg: String) {
+    private fun openTileMenu(pkg: String) {
         val app = entries[pkg] ?: return
-        val items = arrayListOf<Pair<String, () -> Unit>>("Use manual order" to {
+        val items = ArrayList<Pair<String, () -> Unit>>()
+        if (prefs.mostUsed) items.add("Use manual order" to {
             setMostUsed(false); tileOf(pkg)?.requestFocus()
-        })
+        }) else {
+            items.add("Move" to { tileOf(pkg)?.let { startMove(it) } })
+            items.add((if (pkg in dockPkgs) "Remove from top row" else "Add to top row") to { toggleDock(pkg) })
+        }
         if (Folders.isFolderId(pkg)) {
             items.add("Open folder" to { openFolder(pkg) })
             items.add("Rename folder" to { openFolder(pkg, rename = true) })
@@ -785,8 +789,10 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         } else {
             items.add("Add to a folder" to { chooseFolder(pkg) })
             items.add("Hide app" to { hideApp(pkg) })
+            if (Platform.canUninstall(ctx, pkg)) items.add("Uninstall" to { requestUninstall(pkg) })
         }
-        card(app.label, items, "Most used controls this tile's position. Switch to Manual to move it yourself.")
+        card(app.label, items, if (prefs.mostUsed)
+            "Most used controls this tile's position. Switch to Manual to move it yourself." else null)
     }
 
     /**
@@ -812,7 +818,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         t.tag = row
         // Read the tile's app at click time: a move swaps apps between tiles in place.
         t.onClick = { val a = t.app; if (!editMode && a != null) launch(a.pkg, t) }
-        t.onLongPress = { if (!editMode) startMove(t) }
+        t.onLongPress = { if (!editMode && movingPkg == null) heldAppMenu { openTileMenu(t.app?.pkg ?: app.pkg) } }
         return t
     }
 
@@ -941,7 +947,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         syncOther()
     }
 
-    // ---------- Move mode (hold OK on an app) ----------
+    // ---------- App actions and move mode ----------
 
     private fun tileOf(pkg: String?): TileView? {
         if (pkg == null) return null
@@ -949,11 +955,27 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         return null
     }
 
-    /** Hold OK on a tile: it lifts and wiggles; arrows move it across the shelf and the drawer. */
+    /** Consume the release/repeats of the OK hold that opened a menu, never its first action. */
+    fun heldAppMenu(open: () -> Unit) { eatOkUp = true; open() }
+
+    /** Opens only the platform's confirmation. Cancellation leaves layout and installed apps untouched. */
+    fun requestUninstall(pkg: String) {
+        val intent = try { Platform.uninstallIntent(ctx, pkg) } catch (e: RuntimeException) { null }
+        if (intent == null) {
+            card("Uninstall unavailable", listOf("OK" to {}),
+                "This app cannot be uninstalled here. You can manage it in ${Platform.name(ctx)} Settings.")
+            return
+        }
+        if (folderPanel.isOpen) folderPanel.close(instant = true)
+        leaveMove()
+        host.startApp(intent, Platform.handler(ctx, intent), null)
+    }
+
+    /** Move from the held-OK menu: the tile lifts and wiggles; arrows move it across the shelf and drawer. */
     private fun startMove(t: TileView) {
         val pkg = t.app?.pkg ?: return
         if (editMode || movingPkg != null || settings.isOpen || cc.isOpen) return
-        if (prefs.mostUsed) { openSortedAppMenu(pkg); return }
+        if (prefs.mostUsed) { openTileMenu(pkg); return }
         movingPkg = pkg
         moveFrom = Pair(dockPkgs.toList(), drawerPkgs.toList())
         t.picked = true
@@ -1085,6 +1107,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         } else {
             items.add("Add to a folder" to { dropMove(); chooseFolder(pkg) })
             items.add("Hide app" to { dropMove(); hideApp(pkg) })
+            if (Platform.canUninstall(ctx, pkg)) items.add("Uninstall" to { cancelMove(); requestUninstall(pkg) })
         }
         appMenu.open(app.label, items) {
             blockHome(false)

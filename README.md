@@ -4,7 +4,7 @@
 
 This is our version of [GlassOS](https://github.com/AbhishekKaisar/glassos-tv), built around silent scenery that plays behind the app icons. Videos stay on the device, pause when another app opens, and resume when you come home. The fork adds scenery controls, cinema mode, scheduled dimming, folders, portable settings, lighter visual effects, and automatic app ordering by time spent.
 
-**[Download the signed APK](https://github.com/hnkabraham/glassos-aerial/releases/tag/v1.2.0-aerial.1)** · **[User guide](docs/USAGE.md)** · **[Fire TV launcher & privacy setup](docs/FIRE-TV-SETUP.md)** · **[Validation](docs/VALIDATION.md)**
+**[Download the signed APK](https://github.com/hnkabraham/glassos-aerial/releases/tag/v1.3.0-aerial.1)** · **[User guide](docs/USAGE.md)** · **[Fire TV launcher & privacy setup](docs/FIRE-TV-SETUP.md)** · **[Validation](docs/VALIDATION.md)**
 
 Based on GlassOS v1.0.2-beta by **Abhishek Kaisar and contributors**. Their launcher is the foundation of this project; our additions use the same GPLv3 license.
 
@@ -12,6 +12,7 @@ Based on GlassOS v1.0.2-beta by **Abhishek Kaisar and contributors**. Their laun
 
 | Feature | What it does |
 | --- | --- |
+| Uninstall from Home | Hold OK on an app, choose Uninstall, then confirm in the TV’s own dialog. Available in both app-order modes and inside folders. |
 | Most-used app order | Automatically ranks the top row, drawer and folder contents by recent foreground time. Manual mode restores your saved arrangement. |
 | Local aerial videos | Silent, hardware-decoded scenery behind the icons; releases the decoder when Home loses focus and resumes the saved position on return. |
 | Scenery browser | Poster thumbnails, next/previous, favourites, hidden scenes, scene names, and persistent shuffle without repeats. |
@@ -39,14 +40,14 @@ These captures show our fork on an Android TV emulator with generated test clips
 
 ## Install and add scenery
 
-Current release: **1.2.0-aerial.1**, version code **5**. Download `GlassOS-Aerial-1.2.0.apk` from our release page. Our APK uses `io.github.abhishekkaisar.glassos.aerial` and its own signing key, so it installs alongside upstream GlassOS. Updating an earlier Aerial build with the same key preserves its settings.
+Current release: **1.3.0-aerial.1**, version code **6**. Download `GlassOS-Aerial-1.3.0.apk` from our release page. Our APK uses `io.github.abhishekkaisar.glassos.aerial` and its own signing key, so it installs alongside upstream GlassOS. Updating an earlier Aerial build with the same key preserves its settings.
 
 For ADB installation, enable debugging on the TV, accept its computer authorization prompt, and substitute its address:
 
 ```sh
 TV="FIRE_TV_IP:5555"
 adb connect "$TV"
-adb -s "$TV" install -r GlassOS-Aerial-1.2.0.apk
+adb -s "$TV" install -r GlassOS-Aerial-1.3.0.apk
 adb -s "$TV" shell am start -n io.github.abhishekkaisar.glassos.aerial/io.github.abhishekkaisar.glassos.MainActivity
 ```
 

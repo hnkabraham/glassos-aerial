@@ -3,7 +3,9 @@ package io.github.abhishekkaisar.glassos
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 
@@ -119,6 +121,28 @@ object Platform {
             if (grid.resolveActivity(ctx.packageManager) != null) return grid
         }
         return Intent(Settings.ACTION_SETTINGS)
+    }
+
+    /** Only ordinary installed apps: never offer to remove this launcher or the active native Home route. */
+    fun canUninstall(ctx: Context, pkg: String): Boolean = try {
+        val app = ctx.packageManager.getApplicationInfo(pkg, 0)
+        pkg != ctx.packageName && pkg != defaultHome(ctx) &&
+            app.flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0
+    } catch (e: PackageManager.NameNotFoundException) { false }
+      catch (e: RuntimeException) { false }
+
+    /** The OS owns confirmation and removal. This intent keeps API 22 support; no silent-delete permission. */
+    @Suppress("DEPRECATION")
+    fun uninstallIntent(ctx: Context, pkg: String): Intent? {
+        if (!canUninstall(ctx, pkg)) return null
+        val i = Intent(Intent.ACTION_UNINSTALL_PACKAGE, Uri.fromParts("package", pkg, null))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val ri = ctx.packageManager.resolveActivity(i, 0) ?: return null
+        val info = ri.activityInfo
+        if (info.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM == 0 || !info.exported || (info.permission != null &&
+                ctx.checkCallingOrSelfPermission(info.permission) != PackageManager.PERMISSION_GRANTED)) return null
+        // Pin the resolved system handler so HomeOverlay tracks the app that actually opens.
+        return i.setComponent(ComponentName(info.packageName, info.name))
     }
 
     /** The package that handles [i], for the overlay's bookkeeping. */
