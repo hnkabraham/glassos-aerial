@@ -87,7 +87,7 @@ class TileView(ctx: Context, val cardW: Int, val cardH: Int, private val labelH:
     var labelAlpha = 1f
         set(v) { if (field != v) { field = v; invalidate() } }
     var app: AppEntry? = null
-        set(v) { field = v; buildShaders(); invalidate() }
+        set(v) { field = v; contentDescription = v?.label; buildShaders(); invalidate() }
     var badge = false
         set(v) { field = v; invalidate() }
     var picked = false

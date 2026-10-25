@@ -21,7 +21,8 @@ data class DisplayBackup(
     val nightEnd: Int? = null,
     val nightLevel: Int? = null,
     val reduceTransparency: Boolean? = null,
-    val reduceMotion: Boolean? = null
+    val reduceMotion: Boolean? = null,
+    val mostUsed: Boolean? = null
 )
 
 data class SceneryBackup(
@@ -118,6 +119,7 @@ object BackupCodec {
             j.put("night", n)
             s.reduceTransparency?.let { j.put("reduceTransparency", it) }
             s.reduceMotion?.let { j.put("reduceMotion", it) }
+            s.mostUsed?.let { j.put("mostUsed", it) }
             o.put("display", j)
         }
         d.scenery?.let { s ->
@@ -229,7 +231,8 @@ object BackupCodec {
             cinemaClock = bool(d, "cinemaClock", "display.cinemaClock"),
             nightEnabled = n?.let { bool(it, "enabled", "display.night.enabled") }, nightStart = start, nightEnd = end, nightLevel = level,
             reduceTransparency = bool(d, "reduceTransparency", "display.reduceTransparency"),
-            reduceMotion = bool(d, "reduceMotion", "display.reduceMotion"))
+            reduceMotion = bool(d, "reduceMotion", "display.reduceMotion"),
+            mostUsed = bool(d, "mostUsed", "display.mostUsed"))
     }
 
     private fun scenery(o: JSONObject): SceneryBackup? {

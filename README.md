@@ -2,9 +2,9 @@
 
 **A quiet TV home screen with local aerial videos, your apps, and controls that work with the remote.**
 
-This is our version of [GlassOS](https://github.com/AbhishekKaisar/glassos-tv), built around silent scenery that plays behind the app icons. Videos stay on the device, pause when another app opens, and resume when you come home. The fork adds scenery controls, cinema mode, scheduled dimming, folders, portable settings, and lighter visual effects.
+This is our version of [GlassOS](https://github.com/AbhishekKaisar/glassos-tv), built around silent scenery that plays behind the app icons. Videos stay on the device, pause when another app opens, and resume when you come home. The fork adds scenery controls, cinema mode, scheduled dimming, folders, portable settings, lighter visual effects, and automatic app ordering by time spent.
 
-**[Download the signed APK](https://github.com/hnkabraham/glassos-aerial/releases/tag/v1.1.0-aerial.1)** · **[User guide](docs/USAGE.md)** · **[Fire TV launcher & privacy setup](docs/FIRE-TV-SETUP.md)** · **[Validation](docs/VALIDATION.md)**
+**[Download the signed APK](https://github.com/hnkabraham/glassos-aerial/releases/tag/v1.2.0-aerial.1)** · **[User guide](docs/USAGE.md)** · **[Fire TV launcher & privacy setup](docs/FIRE-TV-SETUP.md)** · **[Validation](docs/VALIDATION.md)**
 
 Based on GlassOS v1.0.2-beta by **Abhishek Kaisar and contributors**. Their launcher is the foundation of this project; our additions use the same GPLv3 license.
 
@@ -12,6 +12,7 @@ Based on GlassOS v1.0.2-beta by **Abhishek Kaisar and contributors**. Their laun
 
 | Feature | What it does |
 | --- | --- |
+| Most-used app order | Automatically ranks the top row, drawer and folder contents by recent foreground time. Manual mode restores your saved arrangement. |
 | Local aerial videos | Silent, hardware-decoded scenery behind the icons; releases the decoder when Home loses focus and resumes the saved position on return. |
 | Scenery browser | Poster thumbnails, next/previous, favourites, hidden scenes, scene names, and persistent shuffle without repeats. |
 | Cinema mode | Fades the icons after inactivity, with an optional clock. The first remote press wakes the home without launching an app. |
@@ -20,9 +21,13 @@ Based on GlassOS v1.0.2-beta by **Abhishek Kaisar and contributors**. Their laun
 | Backup and restore | Portable JSON for your layout, folders, display settings and scenery choices. |
 | Lighter effects | Reduce transparency and motion for simpler panels and navigation. |
 
+**Settings > App order > Most used** enables automatic sorting. It uses the TV’s local Usage access, keeps usage history out of backups, and leaves Amazon’s privacy opt-outs unchanged. See [how the ranking works](docs/USAGE.md#most-used-app-order).
+
 The original glass panels, app drawer, remote navigation, Control Center, sleep timer and optional movie/TV artwork sources remain available.
 
 ## Our interface
+
+![Manual and Most used app-order choices](docs/validation/usage-order-settings.png)
 
 These captures show our fork on an Android TV emulator with generated test clips. The simple colours are QA fixtures; on a TV the background is whichever aerial videos you supply.
 
@@ -34,14 +39,14 @@ These captures show our fork on an Android TV emulator with generated test clips
 
 ## Install and add scenery
 
-Current release: **1.1.0-aerial.1**, version code **4**. Download `GlassOS-Aerial-1.1.0.apk` from our release page. Our APK uses `io.github.abhishekkaisar.glassos.aerial` and its own signing key, so it installs alongside upstream GlassOS. Updating an earlier Aerial build with the same key preserves its settings.
+Current release: **1.2.0-aerial.1**, version code **5**. Download `GlassOS-Aerial-1.2.0.apk` from our release page. Our APK uses `io.github.abhishekkaisar.glassos.aerial` and its own signing key, so it installs alongside upstream GlassOS. Updating an earlier Aerial build with the same key preserves its settings.
 
 For ADB installation, enable debugging on the TV, accept its computer authorization prompt, and substitute its address:
 
 ```sh
 TV="FIRE_TV_IP:5555"
 adb connect "$TV"
-adb -s "$TV" install -r GlassOS-Aerial-1.1.0.apk
+adb -s "$TV" install -r GlassOS-Aerial-1.2.0.apk
 adb -s "$TV" shell am start -n io.github.abhishekkaisar.glassos.aerial/io.github.abhishekkaisar.glassos.MainActivity
 ```
 
@@ -57,7 +62,7 @@ MP4, MOV and M4V files are discovered by filename; decoding depends on the TV. O
 
 Our personal setup has **20 compressed, 90-second clips**: about **30 minutes** of scenery using **1.09 GB** including posters. The videos are not included in this public repository or APK. Supply media you have permission to use. The app does not download scenery and needs no video API or account. The published APK has no embedded TMDB key; that optional artwork source requires your own key.
 
-**Cinema mode defaults to 1 minute** with its clock enabled. Shuffle, night mode and reduced effects start off. All controls are in Settings; Scenery is also in Control Center. See the [full guide](docs/USAGE.md) for remote shortcuts, scene metadata and permission commands.
+**Cinema mode defaults to 1 minute** with its clock enabled. App order starts in Manual; shuffle, night mode and reduced effects start off. All controls are in Settings; Scenery is also in Control Center. See the [full guide](docs/USAGE.md) for remote shortcuts, scene metadata and permission commands.
 
 ## How we made it the Fire TV launcher
 
@@ -115,7 +120,7 @@ Backups include layout, folders, display and scenery choices. They exclude crede
 
 ## Tested configuration
 
-- **49 JVM tests passed**, covering playlists, scene names, schedules, folders and backup validation.
+- **57 JVM tests passed**, covering usage ranking, playlists, scene names, schedules, folders and backup validation.
 - Debug and signed release builds passed; lint reported **0 errors** (113 warnings).
 - Android TV API 31 emulator: remote navigation, scenery, folders, cinema wake, dimming/effects and backup/import.
 - Fire TV Stick 4K Max / Fire OS 8.1.8.5: in-place signed upgrade, all 20 scenes discovered, hardware playback, decoder release in another app, and Home returning to Aerial.

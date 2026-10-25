@@ -11,6 +11,24 @@ adb connect "$TV"
 
 ## What GlassOS Aerial adds
 
+### Most-used app order
+
+Choose **Settings > App order > Most used**. The six most-used top-level items move to the top row; the rest of the drawer follows in descending usage order. Folder contents sort too, and each folder ranks by its visible members' combined time. Hidden and uninstalled apps do not contribute to that folder's score. Equal scores keep the order from your saved layout. Home-handler apps (including Launcher Manager), screensavers and Fire TV Ambient Experience receive no usage score, so idle/setup time does not promote them. They remain available in the app list.
+
+Usage means **time the app was in the foreground**, rather than the number of launches or background-service time. GlassOS asks Android for the preceding 30 days using [UsageStatsManager](https://developer.android.com/reference/android/app/usage/UsageStatsManager#queryAndAggregateUsageStats(long,long)) and [foreground duration](https://developer.android.com/reference/android/app/usage/UsageStats#getTotalTimeInForeground()). Android may supply whole day/week/month buckets and limited retained history, so the UI says **about 30 days**. This is not an exact watch-time counter.
+
+The ranking refreshes when you return Home. If a query finishes after you start navigating, its result waits for the next return instead of moving a tile under your remote. There is no periodic polling or extra background service. Choosing the mode in Settings can update the grid beneath that panel.
+
+**Usage access is required**, separately from Amazon's Collect App Usage Data switch. Enable it through GlassOS **Settings > Permissions**, or grant only this permission from an authorized computer:
+
+```sh
+adb -s "$TV" shell appops set io.github.abhishekkaisar.glassos.aerial GET_USAGE_STATS allow
+```
+
+GlassOS does not change Amazon privacy settings or re-enable the blocked telemetry packages. Ranking history stays in memory; GlassOS does not save, log or upload it, and it is excluded from settings exports. Only the Manual/Most used preference travels in a backup. If access is denied or no usable history exists, the launcher keeps the manual layout and shows a status message in Settings.
+
+**Manual** restores the saved top row, drawer and folder-member ordering. In Most used mode, holding OK on a tile still offers folder and hide actions; choose **Use manual order** to move tiles yourself. **Edit top row** and **Top row apps** explain that they need Manual mode before changing the saved layout. Creating, removing or editing a folder updates the underlying manual membership without saving the automatic ranking over it.
+
 ### Aerial scenery
 
 Settings > Top Shelf > **Local aerial videos** plays your own clips, muted, behind the home with the platform's
@@ -104,7 +122,7 @@ adb -s <new-tv> push glassos-aerial-backup-20261024-163012.json /sdcard/Document
 ```
 
 A backup holds only: the top row, drawer order and hidden apps, folders, the Top Shelf source and built-in
-fallback background, focus sounds, cinema, night and effects settings, and scenery favourites, hidden scenes,
+fallback background, focus sounds, cinema, night and effects settings, the Manual/Most used preference, and scenery favourites, hidden scenes,
 shuffle, favourites only and scene names. It never holds the TMDB key or other credentials, your name, photo or
 country, setup and permission state, Home replacement and routing, the sleep timer, playback positions, device
 identifiers, network details, media or signing data. Apps and clips missing on the new TV are kept in the settings
@@ -147,7 +165,7 @@ Every feature works without its permission, with less:
 
 | Permission | Used for | Without it |
 |---|---|---|
-| Usage access | Noticing the stock home after the Home button (not needed when GlassOS is the default home) | Home goes to the stock home; open GlassOS from your apps |
+| Usage access | Most-used app order; also detecting stock Home for the optional watcher | Most-used mode keeps manual order; the watcher cannot detect stock Home |
 | Display over other apps | Showing GlassOS at once after Home | GlassOS still comes back, a moment later |
 | Notification access | Now Playing and Do Not Disturb | Those tiles are hidden or open the TV's settings |
 | Device admin | Sleep and the sleep timer | Fire TV: Sleep opens the Fire TV sleep menu. Android TV: Sleep is unavailable |

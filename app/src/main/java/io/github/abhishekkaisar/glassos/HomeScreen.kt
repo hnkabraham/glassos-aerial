@@ -122,6 +122,11 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     private var pickedIndex = -1
     private var wallToken = 0
     private var appsToken = 0
+    private var usageToken = 0
+    private var usage = AppUsage.Snapshot()
+    private var usagePending = false
+    private var usageInputEpoch = 0L
+    private var inputEpoch = 0L
     private var focusedOnce = false
     /** True while the window showing this home is in front (activity resumed, or the overlay shown). */
     var resumed = false
@@ -579,6 +584,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         if (::setup.isInitialized) setup.onReturned()
         updateTime()
         if (!worker.isShutdown) worker.execute { refreshTitles(prefs.scene, wallToken) }
+        if (usagePending) { usageInputEpoch = inputEpoch; applyPendingUsage() }
+        refreshUsageOrder()
     }
 
     fun updateTime() {
@@ -661,12 +668,10 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         if (appMenu.isOpen) appMenu.close()
         apps = list
         val byPkg = list.associateBy { it.pkg }
-        val folders = prefs.folders
-        val names = folders.associate { it.id to it.name }
-        // Folders hold their apps out of the grid; HomeLayout keeps every installed, unhidden app reachable.
-        val p = HomeLayout.place(list.map { it.pkg }, prefs.hidden, folders, prefs.dock, prefs.order, COLS,
-            labelOf = { id -> names[id] ?: byPkg[id]?.label ?: id },
-            defaultDock = { ids -> AppRepo.defaultDock(ids.mapNotNull { byPkg[it] }) })
+        val names = prefs.folders.associate { it.id to it.name }
+        // Automatic ranking is derived from the saved layout, so switching back to manual restores it.
+        val base = manualPlacement()
+        val p = if (prefs.mostUsed) UsageOrder.arrange(base, usage.time, COLS) else base
         folderMembers = p.folderMembers
         val e = HashMap<String, AppEntry>()
         for (id in p.dock + p.drawer) {
@@ -687,8 +692,102 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     /** What the top row picker offers: apps not in a folder, and folders, alphabetically. */
     fun topLevelEntries(): List<AppEntry> = (dockPkgs + drawerPkgs).mapNotNull { entries[it] }.sortedBy { it.label.lowercase() }
 
-    private fun saveDock() { prefs.dock = dockPkgs.toList() }
-    private fun saveOrder() { prefs.order = drawerPkgs.toList() }
+    private fun saveDock() { if (!prefs.mostUsed) prefs.dock = dockPkgs.toList() }
+    private fun saveOrder() { if (!prefs.mostUsed) prefs.order = drawerPkgs.toList() }
+
+    private fun manualPlacement(): HomeLayout.Placement {
+        val byPkg = apps.associateBy { it.pkg }
+        val folders = prefs.folders
+        val names = folders.associate { it.id to it.name }
+        return HomeLayout.place(apps.map { it.pkg }, prefs.hidden, folders, prefs.dock, prefs.order, COLS,
+            labelOf = { id -> names[id] ?: byPkg[id]?.label ?: id },
+            defaultDock = { ids -> AppRepo.defaultDock(ids.mapNotNull { byPkg[it] }) })
+    }
+
+    val usageOrderDescription: String get() = when {
+        !prefs.mostUsed -> "Your saved manual layout"
+        !HomeWatcher.hasAccess(ctx) -> "Needs Usage access in Permissions"
+        usage.state == AppUsage.State.UNAVAILABLE -> "Usage unavailable; using manual order"
+        usage.time.isEmpty() -> "No usage yet; using manual order"
+        else -> "Recent app time · about 30 days"
+    }
+
+    fun chooseAppOrder() {
+        card("App order", listOf("Manual" to { setMostUsed(false) }, "Most used" to { setMostUsed(true) }),
+            "Sort the top row, drawer and folder contents by recent time spent (about 30 days). " +
+            "Folders use their visible apps' combined time.\n\n" +
+            "Needs local Usage access. GlassOS does not save or upload history or change Amazon's privacy settings.\n\n" +
+            "Manual restores your saved layout." + if (prefs.mostUsed) "\n\n$usageOrderDescription." else "")
+    }
+
+    fun setMostUsed(on: Boolean) {
+        ++usageToken
+        usagePending = false
+        prefs.mostUsed = on
+        if (!on) usage = AppUsage.Snapshot()
+        reloadDock()
+        syncOther()
+        settings.refresh()
+        if (on) refreshUsageOrder(explicit = true)
+    }
+
+    /** Refresh only on returning Home or choosing the mode. No timer, background service, or saved history. */
+    private fun refreshUsageOrder(explicit: Boolean = false) {
+        if (!prefs.mostUsed || released || worker.isShutdown) return
+        val token = ++usageToken
+        val epoch = inputEpoch
+        worker.execute {
+            val result = AppUsage.read(ctx)
+            ui {
+                if (token != usageToken || !prefs.mostUsed) return@ui
+                usage = result
+                usageInputEpoch = epoch
+                usagePending = true
+                if (settings.isOpen) settings.refresh()
+                // A choice in Settings may update the grid beneath it. A slow query must not move tiles under
+                // someone's remote input; its result is held until the next return Home instead.
+                if (explicit && settings.isOpen && !appMenu.isOpen && !setup.isOpen && !browser.isOpen &&
+                    !folderPanel.isOpen && !editMode && movingPkg == null) applyUsageOrder()
+                else applyPendingUsage()
+            }
+        }
+    }
+
+    private fun applyPendingUsage() {
+        if (usagePending && prefs.mostUsed && resumed && root.hasWindowFocus() && inputEpoch == usageInputEpoch &&
+            !settings.isOpen && !cc.isOpen && !setup.isOpen && !appMenu.isOpen && !browser.isOpen &&
+            !folderPanel.isOpen && !editMode && movingPkg == null) applyUsageOrder()
+    }
+
+    private fun applyUsageOrder() {
+        if (apps.isEmpty()) return // App discovery may still be running; applyApps will use this snapshot.
+        usagePending = false
+        val next = UsageOrder.arrange(manualPlacement(), usage.time, COLS)
+        if (next.dock != dockPkgs || next.drawer != drawerPkgs || next.folderMembers != folderMembers) applyApps(apps)
+    }
+
+    /** Manual editing starts from the saved layout, never from an automatically ranked projection. */
+    fun editManualLayout(action: () -> Unit) {
+        if (!prefs.mostUsed) { action(); return }
+        card("Edit manual layout?", listOf("Cancel" to {}, "Use manual order" to { setMostUsed(false); action() }),
+            "Most used is arranging your apps. Switch to Manual to edit the saved top row and app order.")
+    }
+
+    private fun openSortedAppMenu(pkg: String) {
+        val app = entries[pkg] ?: return
+        val items = arrayListOf<Pair<String, () -> Unit>>("Use manual order" to {
+            setMostUsed(false); tileOf(pkg)?.requestFocus()
+        })
+        if (Folders.isFolderId(pkg)) {
+            items.add("Open folder" to { openFolder(pkg) })
+            items.add("Rename folder" to { openFolder(pkg, rename = true) })
+            items.add("Remove folder" to { confirmRemoveFolder(pkg) })
+        } else {
+            items.add("Add to a folder" to { chooseFolder(pkg) })
+            items.add("Hide app" to { hideApp(pkg) })
+        }
+        card(app.label, items, "Most used controls this tile's position. Switch to Manual to move it yourself.")
+    }
 
     /**
      * An app leaving the top row goes to the front of the drawer once the user has arranged it, or back to its
@@ -828,6 +927,13 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         val i = flat.indexOf(pkg)
         val next = flat.getOrNull(i + 1)?.takeIf { (it in dockPkgs) == (pkg in dockPkgs) } ?: flat.getOrNull(i - 1)
         prefs.hidden = prefs.hidden + pkg
+        if (prefs.mostUsed) {
+            reloadDock()
+            tileOf(next)?.requestFocus()
+            Toast.makeText(ctx, "Hidden. Settings > Hidden apps shows it again.", Toast.LENGTH_LONG).show()
+            syncOther()
+            return
+        }
         if (dockPkgs.remove(pkg)) saveDock()
         drawerPkgs.remove(pkg)
         rebuildGrid(next)
@@ -847,6 +953,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     private fun startMove(t: TileView) {
         val pkg = t.app?.pkg ?: return
         if (editMode || movingPkg != null || settings.isOpen || cc.isOpen) return
+        if (prefs.mostUsed) { openSortedAppMenu(pkg); return }
         movingPkg = pkg
         moveFrom = Pair(dockPkgs.toList(), drawerPkgs.toList())
         t.picked = true
@@ -1056,6 +1163,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         blockHome(false)
         focusDock()
         updateHeroRunning()
+        refreshUsageOrder(explicit = true)
     }
 
     fun openControlCenter() {
@@ -1083,6 +1191,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     }
 
     fun enterEdit() {
+        if (prefs.mostUsed) { editManualLayout { enterEdit() }; return }
         if (dockTiles.isEmpty()) return
         leaveMove()
         editMode = true
@@ -1289,10 +1398,14 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         val f = folders.firstOrNull { it.id == id } ?: return
         val visible = folderMembers[id] ?: emptyList()
         val picked = pkgs.filter { Folders.isValidPackage(it) }.distinct()
-        val members = (picked + f.members.filter { it !in visible }).distinct().take(Folders.MAX_MEMBERS)
-        val removed = visible.filter { it !in picked }
+        // A sorted picker must not silently save its projected order over the folder's manual order.
+        val ordered = if (prefs.mostUsed) f.members.filter { it in picked || it !in visible } + picked.filter { it !in f.members }
+            else picked + f.members.filter { it !in visible }
+        val members = ordered.distinct().take(Folders.MAX_MEMBERS)
+        val removed = f.members.filter { it in visible && it !in picked }
+        val manualDock = manualPlacement().dock
         prefs.folders = folders.map { g -> if (g.id == id) g.copy(members = members) else g.copy(members = g.members - picked.toSet()) }
-        val dock = ArrayList(dockPkgs)
+        val dock = ArrayList(manualDock)
         var dockChanged = false
         for (pkg in picked) {
             val i = dock.indexOf(pkg)
@@ -1329,10 +1442,11 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
 
     /** Removes the folder; its apps go back to the drawer where the folder was. */
     fun removeFolder(id: String) {
+        val manualDock = manualPlacement().dock
         val (rest, order) = HomeLayout.removeFolder(prefs.folders, id, prefs.order)
         prefs.folders = rest
         if (prefs.order != null) prefs.order = order
-        if (id in dockPkgs) prefs.dock = dockPkgs.filter { it != id }
+        if (id in manualDock) prefs.dock = manualDock.filter { it != id }
         reloadDock()
         syncOther()
         focusDock()
@@ -1351,11 +1465,12 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             Toast.makeText(ctx, "GlassOS holds ${Folders.MAX_FOLDERS} folders. Remove one first.", Toast.LENGTH_LONG).show()
             return
         }
+        val manualDock = manualPlacement().dock
         val id = Folders.newId(folders.map { it.id })
         var next = folders + AppFolder(id, Folders.defaultName(folders), emptyList())
         if (with != null) next = HomeLayout.addToFolder(next, id, with)
         prefs.folders = next
-        if (with != null && with in dockPkgs) prefs.dock = dockPkgs.map { if (it == with) id else it }
+        if (with != null && with in manualDock) prefs.dock = manualDock.map { if (it == with) id else it }
         prefs.order?.let { o ->
             val i = if (with == null) -1 else o.indexOf(with)
             prefs.order = if (i >= 0) o.toMutableList().apply { set(i, id) } else listOf(id) + o
@@ -1499,11 +1614,15 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
 
     /** Everything a restored backup may have changed. */
     private fun reloadAll() {
+        ++usageToken
+        usagePending = false
+        usage = AppUsage.Snapshot()
         settingsChanged()
         reloadDock()
         setWallpaper(prefs.scene, save = false)
         HomeShare.main?.takeIf { it !== this }?.let { it.reloadDock(); it.setWallpaper(it.prefs.scene, save = false) }
         if (settings.isOpen) settings.refresh()
+        refreshUsageOrder(explicit = true)
     }
 
     /** Settings > Back up settings. Asks once for shared storage, which keeps the file when GlassOS is uninstalled. */
@@ -1724,6 +1843,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
 
     /** Home pressed again while this home is shown: like tvOS, close what is open and keep focus. */
     fun onHomeAgain(fromWatcher: Boolean) {
+        refreshUsageOrder()
         exitCinema(instant = false)
         if (setup.isOpen) return
         if (fromWatcher && !settings.isOpen && !cc.isOpen && !editMode && movingPkg == null && !appMenu.isOpen &&
@@ -1746,6 +1866,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     /** Root view: sends keys to the home screen first, and Back to [onBack]. */
     private inner class KeyRoot(c: Context) : FrameLayout(c) {
         override fun dispatchKeyEvent(e: KeyEvent): Boolean {
+            if (e.action == KeyEvent.ACTION_DOWN) inputEpoch++
             if (cinemaKey(e)) return true
             if (onKey(e)) return true
             if (e.keyCode == KeyEvent.KEYCODE_BACK && ctx !is Activity) {
@@ -1756,12 +1877,14 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         }
 
         override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+            if (e.actionMasked == MotionEvent.ACTION_DOWN) inputEpoch++
             if (e.actionMasked == MotionEvent.ACTION_DOWN && cinema) { exitCinema(instant = false); return true }
             lastInput = SystemClock.uptimeMillis()
             return super.dispatchTouchEvent(e)
         }
 
         override fun dispatchGenericMotionEvent(e: MotionEvent): Boolean {
+            inputEpoch++
             if (cinema) { exitCinema(instant = false); return true }
             lastInput = SystemClock.uptimeMillis()
             return super.dispatchGenericMotionEvent(e)
@@ -1769,6 +1892,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
 
         override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
             super.onWindowFocusChanged(hasWindowFocus)
+            if (hasWindowFocus) applyPendingUsage()
             // Something covers the home (a system dialog, Alexa, the screensaver): no cinema under it.
             if (!hasWindowFocus) { exitCinema(instant = true); eatKey = -1 }
             lastInput = SystemClock.uptimeMillis()

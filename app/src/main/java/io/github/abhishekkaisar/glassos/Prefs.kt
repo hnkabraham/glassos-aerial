@@ -47,6 +47,11 @@ class Prefs(ctx: Context) {
         get() = sp.getString("order", null)?.split(',')?.filter { it.isNotBlank() }
         set(v) { sp.edit().putString("order", v?.joinToString(",")).apply() }
 
+    /** Automatic order is a projection; dock/order/folder member lists keep the user's manual layout. */
+    var mostUsed: Boolean
+        get() = sp.getBoolean("mostUsed", false)
+        set(v) { sp.edit().putBoolean("mostUsed", v).apply() }
+
     /** Apps left out of the drawer, the top row and the top row picker (Settings > Hidden apps). */
     var hidden: Set<String>
         get() = sp.getString("hidden", null)?.split(',')?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
@@ -146,7 +151,8 @@ class Prefs(ctx: Context) {
         dock = dock, order = order, hidden = hidden.toList(), folders = folders,
         display = DisplayBackup(sound = sound, topShelf = topShelf, scene = scene.takeIf { it in BackupCodec.SCENE_IDS },
             cinemaDelaySec = cinemaDelaySec, cinemaClock = cinemaClock, nightEnabled = nightEnabled, nightStart = nightStart,
-            nightEnd = nightEnd, nightLevel = nightLevel, reduceTransparency = reduceTransparency, reduceMotion = reduceMotion),
+            nightEnd = nightEnd, nightLevel = nightLevel, reduceTransparency = reduceTransparency, reduceMotion = reduceMotion,
+            mostUsed = mostUsed),
         scenery = SceneryBackup(shuffle = sceneShuffle, favoritesOnly = sceneFavoritesOnly, labels = sceneLabels,
             favorites = sceneFavorites.sorted(), hidden = sceneHidden.sorted()))
 
@@ -172,6 +178,7 @@ class Prefs(ctx: Context) {
             s.nightLevel?.let { e.putInt("nightLevel", it) }
             s.reduceTransparency?.let { e.putBoolean("reduceTransparency", it) }
             s.reduceMotion?.let { e.putBoolean("reduceMotion", it) }
+            s.mostUsed?.let { e.putBoolean("mostUsed", it) }
         }
         d.scenery?.let { s ->
             s.shuffle?.let { e.putBoolean("sceneShuffle", it) }
