@@ -1,4 +1,53 @@
-# GlassOS Aerial 1.3.0-aerial.1 validation
+# GlassOS Aerial 1.4.0-aerial.1 validation
+
+Validated on October 24, 2026. Package `io.github.abhishekkaisar.glassos.aerial`, version code 7.
+
+## Build and automated checks
+
+**63 JVM tests and 28 Python tests passed**, with no failures or errors. Debug and signed optimized release builds passed; lint reported **0 errors, 113 warnings**. JavaScript syntax and Python lint checks passed. The release retains the existing signing certificate and an empty compiled TMDB key.
+
+New coverage includes collection selection and midnight-wrapping schedules, invalid schedule/backup input, playback progress timeouts, interrupted transfers and retries, failed remote hashes, corrupt local sources, low-space refusal, storage budgets, unchanged-file skipping, and metadata publication after successful transfers. Companion tests also cover authenticated API access, Host/Origin checks, traversal refusal, upload limits, serialized jobs, stale backup rejection and invalid APK identity rejection.
+
+## Mac companion
+
+The real browser UI was exercised against an Android TV API 31 emulator. A generated video with audio was uploaded through the file picker, encoded by FFmpeg, fully decoded for validation and inspected as silent H.264 with a JPEG poster. Collection filtering, title/category edits, daily schedule editing and persistence, checked sync, fresh backup export and restore handoff were exercised. Cancel on the TV preserved its settings; confirming Restore applied the copied backup. Final browser checks verified all 20 saved collection previews loaded after reopening and Refresh; preview requests are bounded and retry transient failures.
+
+These captures use generated test videos and a neutral test-device name. Private addresses, tokens, device logs, backups and third-party video files are excluded from the repository.
+
+![Manager scenery library](validation/manager-library.jpg)
+
+![Manager daily rhythm](validation/manager-schedule.jpg)
+
+## TV scenery and recovery
+
+Android TV API 31 remote checks covered collection selection, Scheduled mode, changed schedule loading without a restart, metadata refresh while the browser was open, corrupt-clip skipping, decoder release with no available clips, and recovery after replacing a failed clip at the same filename. The original emulator library and preferences were restored after these controlled fixtures.
+
+| Before: scenery controls | After: collection and refreshed metadata |
+| --- | --- |
+| ![Previous scenery browser](validation/scenery.png) | ![Collection controls](validation/scenery-collections.png) |
+
+![Remote collection picker](validation/collection-picker.png)
+
+![Restore still requires confirmation on the TV](validation/manager-restore.png)
+
+## Lifecycle and physical Fire TV
+
+Fire TV Stick 4K Max (2nd generation, AFTKRT), Fire OS 8.1.8.5.
+
+- The manager archived the previous APK and settings, installed the signed release in place and verified the installed APK hash. Layout, folders, display preferences, favourites and Most used mode were preserved. Collection mode remains All scenes unless Scheduled is selected on the TV.
+- All 20 videos and 20 posters matched their existing hashes, so sync skipped recopying them and transferred only scene metadata and the daily schedule.
+- **10 Home/Settings cycles plus sleep/wake passed on the physical stick; 12 cycles plus sleep/wake passed on the emulator.** The media service showed decoder release while away and active playback on return. No crash was observed.
+- Physical per-cycle PSS samples decreased from 104,234 KB to 101,267 KB. These are short-run samples, not proof that memory cannot grow during longer use.
+- Four physical playback samples over one minute showed `OMX.MTK.VIDEO.DECODER.AVC`, muted playback and zero reported dropped frames. Pressing the native Home button from Settings returned to GlassOS.
+- The installed-package list, disabled-package list, native Launcher Manager Home handler, five Amazon privacy values (all `0`) and three existing Instagram blocker APKs were preserved. Usage access remained allowed. No root, firmware, Home-routing or privacy changes were made for this release.
+
+## Limits
+
+Fire OS 5/6/7 and other physical models were not exercised; minSdk 22 is retained. Reboot and fresh Home setup were not retested. Interrupted transfer and low-storage behavior were tested with controlled subprocess fixtures, not by filling or disconnecting the physical stick. Missing/corrupt media tests used the emulator. Playback evidence samples a short run, not every complete clip or an overnight soak. The manager does not delete existing extra videos, automatically download media or apply system-level privacy/Home changes.
+
+---
+
+# Earlier release: 1.3.0-aerial.1
 
 Validated on October 24, 2026. Package `io.github.abhishekkaisar.glassos.aerial`, version code 6.
 

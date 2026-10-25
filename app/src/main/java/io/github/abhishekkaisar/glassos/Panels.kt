@@ -215,7 +215,7 @@ class SceneBrowser(private val home: HomeScreen) : FrameLayout(home.ctx) {
         alpha = 0f
         animate().alpha(1f).setDuration(Effects.fade(200)).withEndAction { invalidateDeep(panel) }.start()
         // Pick up clips copied since the last scan.
-        home.rescanScenes { list -> if (isOpen && list.map { it.video.path } != clips.map { it.video.path }) { clips = list; build(focusCurrent = false) } }
+        home.rescanScenes { if (isOpen) refresh() }
     }
 
     fun close(instant: Boolean = false) {
@@ -253,7 +253,18 @@ class SceneBrowser(private val home: HomeScreen) : FrameLayout(home.ctx) {
     }
 
     /** Re-reads favourites, hidden scenes and the playing clip (after a change made here or elsewhere). */
-    fun refresh() { if (isOpen) build(focusCurrent = false) }
+    fun refresh() {
+        if (!isOpen) return
+        val latest = home.sceneLibrary()
+        val previous = clips.associateBy { it.id }
+        for (clip in latest) if (previous[clip.id]?.revision != clip.revision) {
+            bitmaps.remove(clip.id)
+            thumbs.firstOrNull { it.wallId == clip.id }?.bitmap = null
+        }
+        bitmaps.keys.retainAll(latest.map { it.id }.toSet())
+        clips = latest
+        build(focusCurrent = false)
+    }
 
     private fun build(focusCurrent: Boolean) {
         val focus = rootView?.findFocus()
@@ -279,6 +290,7 @@ class SceneBrowser(private val home: HomeScreen) : FrameLayout(home.ctx) {
             action("Next scene") { home.skipScene(1); postDelayed({ refresh() }, 100) }
             action("Previous") { home.skipScene(-1); postDelayed({ refresh() }, 100) }
         }
+        action("Collection", SceneCollections.label(prefs.sceneCollection)) { home.chooseCollection() }
         action("Shuffle", if (prefs.sceneShuffle) "On" else "Off") { prefs.sceneShuffle = !prefs.sceneShuffle; home.applySceneChoice(); refresh() }
         action("Favourites only", if (prefs.sceneFavoritesOnly) "On" else "Off") { prefs.sceneFavoritesOnly = !prefs.sceneFavoritesOnly; home.applySceneChoice(); refresh() }
         action("Scene names", if (prefs.sceneLabels) "On" else "Off") { prefs.sceneLabels = !prefs.sceneLabels; refresh() }
@@ -339,6 +351,7 @@ class SceneBrowser(private val home: HomeScreen) : FrameLayout(home.ctx) {
             !aerialOn -> "The Top Shelf shows ${HeroRepo.sourceLabel(home.prefs.topShelf)}. Choose a scene or Use aerial videos to play these."
             reason == SceneFilter.Reason.ALL_HIDDEN -> "Every scene is hidden, so a still background shows. Choose one and press Menu to show it again."
             reason == SceneFilter.Reason.ALL_FAILED -> "None of these clips could be played on this TV. The poster or background shows instead."
+            reason == SceneFilter.Reason.COLLECTION_EMPTY -> "This collection has no playable scenes, so your other visible scenes play."
             reason == SceneFilter.Reason.FAVORITES_EMPTY -> "No favourite can play, so every scene plays."
             else -> null
         }
@@ -353,7 +366,7 @@ class SceneBrowser(private val home: HomeScreen) : FrameLayout(home.ctx) {
                 if (!isOpen) break
                 val b = try { WallpaperStore.decodeCrop(c.poster!!, tw, th) } catch (e: Throwable) { null } ?: continue
                 post {
-                    if (!isOpen) return@post
+                    if (!isOpen || clips.none { it.id == c.id && it.revision == c.revision }) return@post
                     bitmaps[c.id] = b
                     thumbs.firstOrNull { it.wallId == c.id }?.bitmap = b
                 }

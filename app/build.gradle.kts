@@ -33,8 +33,8 @@ android {
         applicationId = "io.github.abhishekkaisar.glassos.aerial"
         minSdk = 22
         targetSdk = 28
-        versionCode = 6
-        versionName = "1.3.0-aerial.1"
+        versionCode = 7
+        versionName = "1.4.0-aerial.1"
         buildConfigField("String", "TMDB_API_KEY", "\"${tmdbKey.replace("\"", "")}\"")
     }
 

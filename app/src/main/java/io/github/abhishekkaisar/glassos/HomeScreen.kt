@@ -227,7 +227,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         aerial = AerialVideoView(ctx).apply {
             onClipChanged = { clip ->
                 clip.poster?.let { poster ->
-                    val key = "aerial:" + poster.path
+                    val key = "aerial:${poster.path}:${clip.revision}"
                     // Preparing a player can announce the same clip before its still finishes loading.
                     if (hero.slides.singleOrNull()?.key != key) hero.setSlides(listOf(Slide(key, Slide.STATIC, art = poster)))
                 }
@@ -575,17 +575,20 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     fun onPaused() {
         exitCinema(instant = true)
         resumed = false
+        if (::aerial.isInitialized) aerial.setRunning(false)
         if (::appMenu.isInitialized) leaveMove()
     }
 
     fun onResumed() {
         lastInput = SystemClock.uptimeMillis()
         resumed = true
+        updateHeroRunning()
         if (::setup.isInitialized) setup.onReturned()
         updateTime()
         if (!worker.isShutdown) worker.execute { refreshTitles(prefs.scene, wallToken) }
         if (usagePending) { usageInputEpoch = inputEpoch; applyPendingUsage() }
         refreshUsageOrder()
+        if (prefs.topShelf == HeroRepo.SRC_AERIAL) rescanScenes { if (browser.isOpen) browser.refresh() }
     }
 
     fun updateTime() {
@@ -595,6 +598,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         if (::cinemaClock.isInitialized) cinemaClock.text = gear.time
         // The minute tick, time and time zone changes all land here: night mode follows them without a timer.
         applyNight()
+        if (::aerial.isInitialized && prefs.sceneCollection == "scheduled" && prefs.topShelf == HeroRepo.SRC_AERIAL)
+            aerial.setPlaylist(aerialClips, true, sceneChoice())
     }
 
     private fun storageGranted() = Build.VERSION.SDK_INT < 23 ||
@@ -1301,13 +1306,25 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
 
     // ---------- Scenery ----------
 
-    fun sceneChoice() = SceneChoice(prefs.sceneFavorites, prefs.sceneHidden, prefs.sceneFavoritesOnly, prefs.sceneShuffle)
+    fun sceneChoice(): SceneChoice {
+        val cal = java.util.Calendar.getInstance()
+        val minute = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
+        val collection = if (prefs.sceneCollection == "scheduled") SceneSchedule.at(AerialStore.schedule, minute) else prefs.sceneCollection
+        return SceneChoice(prefs.sceneFavorites, prefs.sceneHidden, prefs.sceneFavoritesOnly, prefs.sceneShuffle, collection)
+    }
+    fun chooseCollection() {
+        card("Scenery collection", SceneCollections.modes.map { id -> SceneCollections.label(id) to {
+            prefs.sceneCollection = id; applySceneChoice(); if (browser.isOpen) browser.refresh()
+        } }, "Scheduled follows the daily rhythm saved in GlassOS Manager, using this TV’s local time. An empty collection plays your other visible scenes.")
+    }
     fun sceneLibrary(): List<AerialClip> = aerialClips
     fun currentScene(): AerialClip? = aerial.current()
     fun sceneReason(): SceneFilter.Reason = aerial.reason
 
     /** Runs [work] on the home's worker thread (decoding thumbnails, reading files). */
     fun background(work: () -> Unit) { if (!worker.isShutdown) worker.execute(work) }
+
+    fun refreshSceneLibrary() { rescanScenes { if (browser.isOpen) browser.refresh() } }
 
     /** Rescans Movies/GlassAerial off the UI thread. */
     fun rescanScenes(done: (List<AerialClip>) -> Unit) {

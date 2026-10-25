@@ -7,7 +7,7 @@ import kotlin.random.Random
 // play, and the play order.
 
 /** A clip's on-screen name: the scene and, when known, where it is. */
-data class SceneName(val title: String, val location: String = "")
+data class SceneName(val title: String, val location: String = "", val collections: Set<String> = emptySet())
 
 object SceneNames {
     val VIDEO_EXTS = setOf("mp4", "mov", "m4v")
@@ -86,7 +86,7 @@ object SceneMetadata {
                 is JSONObject -> {
                     val t = (v.opt("title") as? String)?.trim()?.take(MAX_TEXT) ?: ""
                     val l = (v.opt("location") as? String)?.trim()?.take(MAX_TEXT) ?: ""
-                    if (t.isEmpty() && l.isEmpty()) null else SceneName(t, l)
+                    if (t.isEmpty() && l.isEmpty()) null else SceneName(t, l, SceneCollections.parse(v.optJSONArray("collections")))
                 }
                 else -> null
             } ?: continue
@@ -99,13 +99,13 @@ object SceneMetadata {
     fun nameFor(fileName: String, meta: Map<String, SceneName>): SceneName {
         val human = SceneNames.humanize(fileName)
         val m = meta[fileName] ?: meta[fileName.substringBeforeLast('.')] ?: return human
-        return SceneName(m.title.ifEmpty { human.title }, m.location.ifEmpty { if (m.title.isEmpty()) human.location else "" })
+        return SceneName(m.title.ifEmpty { human.title }, m.location.ifEmpty { if (m.title.isEmpty()) human.location else "" }, m.collections)
     }
 }
 
 /** Which clips may play, from the user's favourites and hidden scenes. */
 object SceneFilter {
-    enum class Reason { OK, FAVORITES_EMPTY, ALL_HIDDEN, ALL_FAILED, EMPTY_LIBRARY }
+    enum class Reason { OK, FAVORITES_EMPTY, ALL_HIDDEN, ALL_FAILED, EMPTY_LIBRARY, COLLECTION_EMPTY }
 
     class Result(val eligible: List<String>, val reason: Reason)
 

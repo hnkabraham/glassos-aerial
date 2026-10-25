@@ -43,7 +43,7 @@ than one device is attached. For a newly connected device, the person must accep
 
 ```sh
 adb devices -l
-adb -s <device> install -r GlassOS-Aerial-1.3.0.apk
+adb -s <device> install -r GlassOS-Aerial-1.4.0.apk
 adb -s <device> shell am start -n io.github.abhishekkaisar.glassos.aerial/io.github.abhishekkaisar.glassos.MainActivity
 ```
 
@@ -93,7 +93,9 @@ minSdk 22 (Fire OS 5 and 6 must keep working).
   differences belong here or behind `Platform.isFireTv`, not scattered.
 - `MainActivity.kt`, `HomeScreen.kt`, `HeroView.kt`, `HeroRepo.kt`, `Tmdb.kt`: home, Top Shelf and its data.
 - `AppUsage.kt`, `UsageOrder.kt`: local foreground-time ranking, with manual-layout preservation.
-- `AerialVideoView.kt`, `SceneLogic.kt`: local video lifecycle, scene metadata, filtering and playlist.
+- `manager/`: loopback-only Python companion; private data belongs outside the repository. Run `python3 -m unittest discover -s manager/tests -v`. Never publish its state, tokens, media or device reports.
+- `tools/reliability_check.py`: explicit-device lifecycle checks; output stays private.
+- `AerialVideoView.kt`, `SceneLogic.kt`, `SceneCollections.kt`: local video lifecycle, scene metadata, filtering and playlist.
 - `Panels.kt`, `FolderModel.kt`: remote-driven scenery/folder panels and folder layout.
 - `Backup.kt`, `BackupCodec.kt`, `NightSchedule.kt`: portable settings I/O/validation and dimming schedules.
 - `ControlCenter.kt`, `SysControl.kt`: Control Center and the system actions behind it.

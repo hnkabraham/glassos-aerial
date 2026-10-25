@@ -30,7 +30,8 @@ data class SceneryBackup(
     val favoritesOnly: Boolean? = null,
     val labels: Boolean? = null,
     val favorites: List<String>? = null,
-    val hidden: List<String>? = null
+    val hidden: List<String>? = null,
+    val collection: String? = null
 )
 
 /**
@@ -124,6 +125,7 @@ object BackupCodec {
         }
         d.scenery?.let { s ->
             val j = JSONObject()
+            s.collection?.takeIf { it in SceneCollections.modes }?.let { j.put("collection", it) }
             s.shuffle?.let { j.put("shuffle", it) }
             s.favoritesOnly?.let { j.put("favoritesOnly", it) }
             s.labels?.let { j.put("labels", it) }
@@ -238,7 +240,9 @@ object BackupCodec {
     private fun scenery(o: JSONObject): SceneryBackup? {
         val s = obj(o, "scenery") ?: return null
         val check = { n: String, at: String -> if (!SceneNames.isValidId(n)) fail("$at is not a plain file name.") }
-        return SceneryBackup(
+        val collection = str(s, "collection", "scenery.collection")
+        if (collection != null && collection !in SceneCollections.modes) fail("Unknown scenery collection.")
+        return SceneryBackup(collection = collection,
             shuffle = bool(s, "shuffle", "scenery.shuffle"), favoritesOnly = bool(s, "favoritesOnly", "scenery.favoritesOnly"),
             labels = bool(s, "labels", "scenery.labels"),
             favorites = list(s, "favorites", "scenery.favorites", MAX_LIST, check)?.distinct(),

@@ -71,6 +71,10 @@ class Prefs(ctx: Context) {
 
     // ---------- Scenery (local aerial videos) ----------
 
+    var sceneCollection: String
+        get() = (sp.getString("sceneCollection", "all") ?: "all").takeIf { it in SceneCollections.modes } ?: "all"
+        set(v) { sp.edit().putString("sceneCollection", v.takeIf { it in SceneCollections.modes } ?: "all").apply() }
+
     var sceneShuffle: Boolean
         get() = sp.getBoolean("sceneShuffle", false)
         set(v) { sp.edit().putBoolean("sceneShuffle", v).apply() }
@@ -154,7 +158,7 @@ class Prefs(ctx: Context) {
             nightEnd = nightEnd, nightLevel = nightLevel, reduceTransparency = reduceTransparency, reduceMotion = reduceMotion,
             mostUsed = mostUsed),
         scenery = SceneryBackup(shuffle = sceneShuffle, favoritesOnly = sceneFavoritesOnly, labels = sceneLabels,
-            favorites = sceneFavorites.sorted(), hidden = sceneHidden.sorted()))
+            favorites = sceneFavorites.sorted(), hidden = sceneHidden.sorted(), collection = sceneCollection))
 
     /** Applies a validated backup in one commit; sections and fields it does not have keep their values. */
     fun apply(d: BackupData): Boolean {
@@ -181,6 +185,7 @@ class Prefs(ctx: Context) {
             s.mostUsed?.let { e.putBoolean("mostUsed", it) }
         }
         d.scenery?.let { s ->
+            s.collection?.let { e.putString("sceneCollection", it) }
             s.shuffle?.let { e.putBoolean("sceneShuffle", it) }
             s.favoritesOnly?.let { e.putBoolean("sceneFavOnly", it) }
             s.labels?.let { e.putBoolean("sceneLabels", it) }

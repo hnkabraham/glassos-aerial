@@ -4,7 +4,7 @@
 
 This is our version of [GlassOS](https://github.com/AbhishekKaisar/glassos-tv), built around silent scenery that plays behind the app icons. Videos stay on the device, pause when another app opens, and resume when you come home. The fork adds scenery controls, cinema mode, scheduled dimming, folders, portable settings, lighter visual effects, and automatic app ordering by time spent.
 
-**[Download the signed APK](https://github.com/hnkabraham/glassos-aerial/releases/tag/v1.3.0-aerial.1)** · **[User guide](docs/USAGE.md)** · **[Fire TV launcher & privacy setup](docs/FIRE-TV-SETUP.md)** · **[Validation](docs/VALIDATION.md)**
+**[Download the signed APK](https://github.com/hnkabraham/glassos-aerial/releases/tag/v1.4.0-aerial.1)** · **[Mac manager](manager/README.md)** · **[User guide](docs/USAGE.md)** · **[Fire TV launcher & privacy setup](docs/FIRE-TV-SETUP.md)** · **[Validation](docs/VALIDATION.md)**
 
 Based on GlassOS v1.0.2-beta by **Abhishek Kaisar and contributors**. Their launcher is the foundation of this project; our additions use the same GPLv3 license.
 
@@ -12,6 +12,9 @@ Based on GlassOS v1.0.2-beta by **Abhishek Kaisar and contributors**. Their laun
 
 | Feature | What it does |
 | --- | --- |
+| Mac companion | Manage devices, verified updates, local video import, checked transfers and portable backups. [Manager guide](manager/README.md). |
+| Collections & daily rhythm | Filter scenery by place and switch collections throughout the day using the TV’s local clock. |
+| Playback recovery | Skip stalled clips, retry repaired files and refresh changed posters and titles. |
 | Uninstall from Home | Hold OK on an app, choose Uninstall, then confirm in the TV’s own dialog. Available in both app-order modes and inside folders. |
 | Most-used app order | Automatically ranks the top row, drawer and folder contents by recent foreground time. Manual mode restores your saved arrangement. |
 | Local aerial videos | Silent, hardware-decoded scenery behind the icons; releases the decoder when Home loses focus and resumes the saved position on return. |
@@ -28,6 +31,8 @@ The original glass panels, app drawer, remote navigation, Control Center, sleep 
 
 ## Our interface
 
+![Local Mac scenery manager with generated test media](docs/validation/manager-library.jpg)
+
 ![Manual and Most used app-order choices](docs/validation/usage-order-settings.png)
 
 These captures show our fork on an Android TV emulator with generated test clips. The simple colours are QA fixtures; on a TV the background is whichever aerial videos you supply.
@@ -40,14 +45,14 @@ These captures show our fork on an Android TV emulator with generated test clips
 
 ## Install and add scenery
 
-Current release: **1.3.0-aerial.1**, version code **6**. Download `GlassOS-Aerial-1.3.0.apk` from our release page. Our APK uses `io.github.abhishekkaisar.glassos.aerial` and its own signing key, so it installs alongside upstream GlassOS. Updating an earlier Aerial build with the same key preserves its settings.
+Current release: **1.4.0-aerial.1**, version code **7**. Download `GlassOS-Aerial-1.4.0.apk` from our release page. Our APK uses `io.github.abhishekkaisar.glassos.aerial` and its own signing key, so it installs alongside upstream GlassOS. Updating an earlier Aerial build with the same key preserves its settings.
 
 For ADB installation, enable debugging on the TV, accept its computer authorization prompt, and substitute its address:
 
 ```sh
 TV="FIRE_TV_IP:5555"
 adb connect "$TV"
-adb -s "$TV" install -r GlassOS-Aerial-1.3.0.apk
+adb -s "$TV" install -r GlassOS-Aerial-1.4.0.apk
 adb -s "$TV" shell am start -n io.github.abhishekkaisar.glassos.aerial/io.github.abhishekkaisar.glassos.MainActivity
 ```
 
@@ -59,7 +64,7 @@ adb -s "$TV" push "01-coast.mp4" /sdcard/Movies/GlassAerial/
 adb -s "$TV" push "01-coast.jpg" /sdcard/Movies/GlassAerial/
 ```
 
-MP4, MOV and M4V files are discovered by filename; decoding depends on the TV. Our tested library uses 1080p H.264, no audio, and matching JPEG posters. Restart the app or reselect the Top Shelf source after copying a new library.
+MP4, MOV and M4V files are discovered by filename; decoding depends on the TV. Our tested library uses 1080p H.264, no audio, and matching JPEG posters. Return Home or reopen Scenery after copying a new library; the Mac manager requests a refresh after syncing.
 
 Our personal setup has **20 compressed, 90-second clips**: about **30 minutes** of scenery using **1.09 GB** including posters. The videos are not included in this public repository or APK. Supply media you have permission to use. The app does not download scenery and needs no video API or account. The published APK has no embedded TMDB key; that optional artwork source requires your own key.
 
@@ -121,11 +126,11 @@ Backups include layout, folders, display and scenery choices. They exclude crede
 
 ## Tested configuration
 
-- **57 JVM tests passed**, covering usage ranking, playlists, scene names, schedules, folders and backup validation.
+- **63 JVM tests and 28 Python tests passed**, covering launcher behavior, schedules, backup validation, local API access and transfer failures.
 - Debug and signed release builds passed; lint reported **0 errors** (113 warnings).
 - Android TV API 31 emulator: remote navigation, scenery, folders, cinema wake, dimming/effects and backup/import.
-- Fire TV Stick 4K Max / Fire OS 8.1.8.5: in-place signed upgrade, all 20 scenes discovered, hardware playback, decoder release in another app, and Home returning to Aerial.
-- Persistent Home/startup and privacy opt-outs were checked after reboot during the earlier device setup. Reboot behavior was not retested for the 1.1.0 app upgrade. Other physical models and older Fire OS versions are not validated for this release.
+- Fire TV Stick 4K Max / Fire OS 8.1.8.5: verified manager upgrade, all 20 scenes preserved, 10 Home/Settings cycles and sleep/wake. The emulator passed 12 cycles and sleep/wake. Sampled playback was muted and hardware-decoded.
+- Persistent Home/startup and privacy opt-outs were checked after reboot during the earlier device setup. Reboot behavior was not retested for this release. Other physical models and older Fire OS versions are not validated for this release.
 
 See [validation details and screenshots](docs/VALIDATION.md). The app retains minSdk 22; that is not a claim that the GhostLock/Launcher Manager method works on every supported Android version.
 

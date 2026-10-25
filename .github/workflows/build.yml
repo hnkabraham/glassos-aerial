@@ -20,6 +20,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Run unit tests, build debug APK, and lint
         run: ./gradlew testDebugUnitTest assembleDebug lint
+      - name: Test desktop companion and check JavaScript
+        run: |
+          python3 -m unittest discover -s manager/tests -v
+          node --check manager/static/app.js
       - uses: actions/upload-artifact@v4
         with:
           name: glassos-debug-apk

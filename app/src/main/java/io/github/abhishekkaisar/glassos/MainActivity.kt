@@ -35,6 +35,7 @@ class MainActivity : Activity(), HomeHost {
         window.setBackgroundDrawable(null)
         HomeWatcher.sync(this)
         if (!home.prefs.setupDone) home.root.post { home.openSetup() }
+        else home.root.post { managerAction(intent) }
         registerReceiver(timeReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_TIME_TICK)
             addAction(Intent.ACTION_TIME_CHANGED)
@@ -133,6 +134,7 @@ class MainActivity : Activity(), HomeHost {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
+        if (managerAction(intent)) return
         // Debug builds: `am start -n io.github.abhishekkaisar.glassos/.MainActivity --ei slide N` fades to slide N (for captures).
         val debug = applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
         if (debug && intent?.hasExtra("slide") == true) {
@@ -155,6 +157,18 @@ class MainActivity : Activity(), HomeHost {
         // Taking over from the overlay restores its state in onResume.
         if (HomeOverlay.screen != null) return
         home.onHomeAgain(fromWatcher)
+    }
+
+    /** Desktop companion shortcuts only open existing safe UI; restore still needs confirmation on the TV. */
+    private fun managerAction(i: Intent?): Boolean {
+        if (!home.prefs.setupDone) return false
+        return when (i?.getStringExtra("managerAction")) {
+            "backup" -> { home.exportBackup(); true }
+            "restore" -> { home.importBackup(); true }
+            "scenery" -> { home.openSceneBrowser(); true }
+            "refresh" -> { home.refreshSceneLibrary(); true }
+            else -> false
+        }
     }
 
     private var demo: android.media.session.MediaSession? = null
