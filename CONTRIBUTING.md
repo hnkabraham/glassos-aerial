@@ -1,7 +1,7 @@
 # Contributing
 
-Thanks for helping. Issues and pull requests are welcome. Questions and ideas go in
-[Discussions](https://github.com/AbhishekKaisar/glassos-tv/discussions).
+Thanks for helping. Issues and pull requests are welcome. Fork-specific questions and bugs belong in
+[our issue tracker](https://github.com/hnkabraham/glassos-aerial/issues).
 
 ## Report a bug or a device result
 
@@ -11,7 +11,7 @@ Thanks for helping. Issues and pull requests are welcome. Questions and ideas go
   `adb logcat -d | grep -i glassos`.
 - **Device results**: GlassOS is tested on few devices. If you try it on yours, use the device report form, even
   when everything works. Say the model, the Fire OS or Android version and whether the Home button opens GlassOS.
-- Issues: https://github.com/AbhishekKaisar/glassos-tv/issues. Look for `good first issue` and `help wanted` if
+- Issues: https://github.com/hnkabraham/glassos-aerial/issues. Look for `good first issue` and `help wanted` if
   you want something to pick up.
 
 ## Build
@@ -40,7 +40,7 @@ or set the `TMDB_API_KEY` environment variable. A key can also be typed in Glass
 1. In Android Studio's Device Manager, create a virtual device from the **Television** category (for example
    Television (1080p)) with an Android TV system image, API 28 or newer.
 2. Start it, then install: `adb install -r app/build/outputs/apk/debug/app-debug.apk`.
-3. Start GlassOS from the launcher, or `adb shell am start -n io.github.abhishekkaisar.glassos/.MainActivity`.
+3. Start GlassOS from the launcher, or `adb shell am start -n io.github.abhishekkaisar.glassos.aerial/io.github.abhishekkaisar.glassos.MainActivity`.
 4. Drive it with the arrow keys, Enter (OK), Escape (Back) and the Home button. Use `adb shell input keyevent
    KEYCODE_MENU` for the Control Center.
 
@@ -56,8 +56,8 @@ that both platforms share, say in the pull request what you could and could not 
 
 ## What CI checks
 
-The **Build** workflow runs on every pull request and every push to `main`. It builds the debug APK with
-`./gradlew assembleDebug lint` using no TMDB key and no signing key, and uploads the APK as an artifact so you can
+The **Build** workflow runs on every pull request and every push to `main`. It runs unit tests, builds the debug APK and checks lint with
+`./gradlew testDebugUnitTest assembleDebug lint` using no TMDB key and no signing key, and uploads the APK as an artifact so you can
 install it from the run page. It does not run on a device.
 
 ## Code style
