@@ -49,6 +49,24 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
     private val fireHomeRow = RowView(context, "${Platform.name(context)} home")
     /** Android TV and Google TV: make GlassOS the default home app. */
     private val homeAppRow = RowView(context, "Home screen")
+    // Scenery, cinema, night and effects.
+    private val sceneryRow = RowView(context, "Scenery")
+    private val shuffleRow = RowView(context, "Shuffle scenes")
+    private val favOnlyRow = RowView(context, "Favourite scenes only")
+    private val labelsRow = RowView(context, "Scene names")
+    private val cinemaRow = StepperRow(context, "Cinema mode") { d -> stepCinema(d) }
+    private val clockRow = RowView(context, "Cinema clock")
+    private val nightRow = RowView(context, "Night mode")
+    private val nightStartRow = StepperRow(context, "Night starts") { d -> act.prefs.nightStart = NightSchedule.step(act.prefs.nightStart, d); changed() }
+    private val nightEndRow = StepperRow(context, "Night ends") { d -> act.prefs.nightEnd = NightSchedule.step(act.prefs.nightEnd, d); changed() }
+    private val nightLevelRow = StepperRow(context, "Night dimming") { d ->
+        act.prefs.nightLevel = ((act.prefs.nightLevel + d) % BackupCodec.NIGHT_LEVELS + BackupCodec.NIGHT_LEVELS) % BackupCodec.NIGHT_LEVELS; changed()
+    }
+    private val transparencyRow = RowView(context, "Reduce transparency")
+    private val motionRow = RowView(context, "Reduce motion")
+    private val folderRow = RowView(context, "New app folder")
+    private val backupRow = RowView(context, "Back up settings")
+    private val restoreRow = RowView(context, "Restore from backup")
     private val scroll = ScrollView(context).apply {
         isVerticalScrollBarEnabled = false
         overScrollMode = View.OVER_SCROLL_NEVER
@@ -112,15 +130,22 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         list.addView(thumbsScroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
             leftMargin = -dpi(14f); rightMargin = -dpi(14f); bottomMargin = dpi(6f)
         })
+        list.addView(section("Scenery and display"))
+        for (r in listOf(sceneryRow, shuffleRow, favOnlyRow, labelsRow, cinemaRow, clockRow, nightRow, nightStartRow,
+                nightEndRow, nightLevelRow, transparencyRow, motionRow)) list.addView(r, rowLp())
+        list.addView(section("Apps"))
         list.addView(editRow, rowLp())
         list.addView(appsRow, rowLp())
         list.addView(hiddenRow, rowLp())
         list.addView(allRow, rowLp())
+        list.addView(folderRow, rowLp())
         list.addView(replaceRow, rowLp())
         list.addView(permsRow, rowLp())
         if (!Platform.isFireTv(context)) list.addView(homeAppRow, rowLp())
         list.addView(fireSettingsRow, rowLp())
         if (Platform.stockHome(context) != null) list.addView(fireHomeRow, rowLp())
+        list.addView(backupRow, rowLp())
+        list.addView(restoreRow, rowLp())
         list.addView(setupRow, rowLp())
         list.addView(uninstallRow, rowLp())
         list.addView(aboutRow, rowLp())
@@ -163,15 +188,72 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
             updateValues()
         }
         fireSettingsRow.onClick = { close { act.openFireSettings() } }
+        sceneryRow.onClick = { resumeRow = sceneryRow; act.openSceneBrowser(fromSettings = true) }
+        shuffleRow.onClick = { act.prefs.sceneShuffle = !act.prefs.sceneShuffle; act.applySceneChoice(); updateValues() }
+        favOnlyRow.onClick = { act.prefs.sceneFavoritesOnly = !act.prefs.sceneFavoritesOnly; act.applySceneChoice(); updateValues() }
+        labelsRow.onClick = { act.prefs.sceneLabels = !act.prefs.sceneLabels; updateValues() }
+        clockRow.onClick = { act.prefs.cinemaClock = !act.prefs.cinemaClock; changed() }
+        nightRow.onClick = { act.prefs.nightEnabled = !act.prefs.nightEnabled; changed() }
+        transparencyRow.onClick = { act.prefs.reduceTransparency = !act.prefs.reduceTransparency; changed() }
+        motionRow.onClick = { act.prefs.reduceMotion = !act.prefs.reduceMotion; changed() }
+        folderRow.onClick = { close(instant = true) { act.createFolder() } }
+        backupRow.onClick = { act.exportBackup() }
+        restoreRow.onClick = { act.importBackup() }
         fireHomeRow.onClick = { close { act.openAmazonHome() } }
-        for (r in listOf(fireSettingsRow, fireHomeRow, photoRow, appsRow, setupRow, aboutRow)) { r.valueView.text = "›"; r.valueView.textSize = 24f }
+        for (r in listOf(fireSettingsRow, fireHomeRow, photoRow, appsRow, setupRow, aboutRow, sceneryRow, folderRow, restoreRow)) { r.valueView.text = "›"; r.valueView.textSize = 24f }
         allRow.valueView.text = "›"
         editRow.valueView.text = "›"
         allRow.valueView.textSize = 24f
         editRow.valueView.textSize = 24f
     }
 
+    private fun section(t: String) = TextView(context).apply {
+        text = t
+        textSize = 15f
+        typeface = Fonts.medium
+        setTextColor(0x99FFFFFF.toInt())
+        setPadding(dpi(20f), dpi(14f), 0, dpi(6f))
+    }
+
+    private fun onOff(b: Boolean) = if (b) "On" else "Off"
+
+    private fun stepCinema(d: Int) {
+        val l = BackupCodec.CINEMA_DELAYS
+        val i = l.indexOf(act.prefs.cinemaDelaySec).coerceAtLeast(0)
+        act.prefs.cinemaDelaySec = l[((i + d) % l.size + l.size) % l.size]
+        changed()
+    }
+
+    /** A display setting changed: show it and apply it at once. */
+    private fun changed() {
+        act.settingsChanged()
+        updateValues()
+    }
+
+    /** Re-reads every value (after a backup was written or restored). */
+    fun refresh() { if (isOpen) { updateValues(); refreshThumbs() } }
+
     private fun updateValues() {
+        val p = act.prefs
+        shuffleRow.valueView.text = onOff(p.sceneShuffle)
+        favOnlyRow.valueView.text = onOff(p.sceneFavoritesOnly)
+        labelsRow.valueView.text = onOff(p.sceneLabels)
+        cinemaRow.value = p.cinemaDelaySec.let { s -> when { s == 0 -> "Off"; s < 60 -> "After $s s"; else -> "After ${s / 60} min" } }
+        clockRow.valueView.text = onOff(p.cinemaClock)
+        nightRow.valueView.text = onOff(p.nightEnabled)
+        val h24 = android.text.format.DateFormat.is24HourFormat(context)
+        nightStartRow.value = NightSchedule.format(p.nightStart, h24)
+        nightEndRow.value = NightSchedule.format(p.nightEnd, h24)
+        nightLevelRow.value = listOf("Low", "Medium", "Strong")[p.nightLevel]
+        for (r in listOf(nightStartRow, nightEndRow, nightLevelRow)) r.alpha = if (p.nightEnabled) 1f else 0.55f
+        clockRow.alpha = if (p.cinemaDelaySec > 0) 1f else 0.55f
+        transparencyRow.valueView.text = onOff(p.reduceTransparency)
+        motionRow.valueView.text = onOff(p.reduceMotion)
+        backupRow.valueView.text = if (p.lastBackup.isEmpty()) "Documents/${Backup.FOLDER}" else p.lastBackup.substringAfterLast('/')
+        backupRow.valueView.textSize = 14f
+        backupRow.valueView.maxLines = 1
+        backupRow.valueView.ellipsize = android.text.TextUtils.TruncateAt.START
+        backupRow.valueView.maxWidth = dpi(200f)
         soundRow.valueView.text = if (act.prefs.sound) "On" else "Off"
         val hiddenCount = act.prefs.hidden.count { p -> HomeShare.apps?.any { it.pkg == p } ?: true }
         hiddenRow.valueView.text = if (hiddenCount == 0) "None" else "$hiddenCount"
@@ -213,7 +295,7 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         act.loadThumbs(thumbs)
         val chosen = thumbs.firstOrNull { it.chosen } ?: thumbs.firstOrNull()
         soundRow.nextFocusDownId = chosen?.id ?: View.NO_ID
-        editRow.nextFocusUpId = chosen?.id ?: View.NO_ID
+        sceneryRow.nextFocusUpId = chosen?.id ?: View.NO_ID
         if (chosen != null) thumbsScroll.post { thumbsScroll.scrollTo((chosen.left - dpi(18f)).coerceAtLeast(0), 0) }
     }
 
@@ -235,7 +317,7 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         updateValues()
         refreshThumbs()
         visibility = View.VISIBLE
-        if (instant) {
+        if (instant || Effects.reduceMotion) {
             scrim.alpha = 1f
             panel.translationX = 0f
             focusStart()
@@ -256,7 +338,7 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
     fun close(instant: Boolean = false, after: (() -> Unit)? = null) {
         if (!isOpen) return
         isOpen = false
-        if (instant) {
+        if (instant || Effects.reduceMotion) {
             visibility = View.GONE
             act.onSettingsClosed()
             after?.invoke()
@@ -296,40 +378,67 @@ class AppMenu(private val act: HomeScreen) : FrameLayout(act.ctx) {
         typeface = Fonts.medium
         setTextColor(0xFFFFFFFF.toInt())
         gravity = Gravity.CENTER
-        maxLines = 1
+        maxLines = 2
         ellipsize = android.text.TextUtils.TruncateAt.END
     }
+    /** Optional explanation under the heading (a saved backup's path, an import error). */
+    private val message = TextView(context).apply {
+        textSize = 15f
+        typeface = Fonts.regular
+        setTextColor(0xD9FFFFFF.toInt())
+        gravity = Gravity.CENTER
+        setLineSpacing(0f, 1.15f)
+    }
+    /** Rows scroll when there are many (folders to choose from, backups to restore). */
+    private val rows = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; clipChildren = false; clipToPadding = false }
+    private val rowScroll = object : ScrollView(context) {
+        override fun onMeasure(w: Int, h: Int) =
+            super.onMeasure(w, MeasureSpec.makeMeasureSpec(Backdrop.screenH * 55 / 100, MeasureSpec.AT_MOST))
+    }.apply { isVerticalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER; clipToPadding = false }
     private var onClosed: (() -> Unit)? = null
 
     init {
         visibility = View.GONE
         clipChildren = false
         addView(scrim, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        addView(panel, LayoutParams(dpi(380f), LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        addView(panel, LayoutParams(dpi(440f), LayoutParams.WRAP_CONTENT, Gravity.CENTER))
         val pad = dpi(18f)
         list.setPadding(pad, dpi(16f), pad, dpi(12f))
+        panel.clipChildren = true
         panel.addView(list, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        list.addView(title, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dpi(10f) })
+        list.addView(message, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dpi(12f) })
+        rowScroll.addView(rows, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        list.addView(rowScroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        if (android.os.Build.VERSION.SDK_INT >= 23) rowScroll.setOnScrollChangeListener { _, _, _, _, _ -> invalidateDeep(rows) }
     }
 
-    /** Shows [items] (label to action) under [heading]; [closed] runs whenever the card closes, before any action. */
-    fun open(heading: String, items: List<Pair<String, () -> Unit>>, closed: () -> Unit) {
+    /**
+     * Shows [items] (label to action) under [heading] and an optional [text]; [closed] runs whenever the card closes,
+     * before any action.
+     */
+    fun open(heading: String, items: List<Pair<String, () -> Unit>>, text: String? = null, closed: () -> Unit) {
         if (isOpen) return
         isOpen = true
         onClosed = closed
-        list.removeAllViews()
+        rows.removeAllViews()
         title.text = heading
-        list.addView(title, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dpi(10f) })
+        message.text = text ?: ""
+        message.visibility = if (text.isNullOrEmpty()) View.GONE else View.VISIBLE
         var first: View? = null
         for ((label, action) in items) {
             val row = RowView(context, label)
             row.titleView.gravity = Gravity.CENTER
+            row.titleView.maxLines = 1
+            row.titleView.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
             row.onClick = { close(); action() }
-            list.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpi(48f)).apply { bottomMargin = dpi(5f) })
+            rows.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dpi(48f)).apply { bottomMargin = dpi(5f) })
             if (first == null) first = row
         }
+        rowScroll.scrollTo(0, 0)
         visibility = View.VISIBLE
         alpha = 0f
-        animate().alpha(1f).setDuration(160).withEndAction { invalidateDeep(panel) }.start()
+        animate().alpha(1f).setDuration(Effects.fade(160)).withEndAction { invalidateDeep(panel) }.start()
         first?.requestFocus()
         invalidateDeep(panel)
     }

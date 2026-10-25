@@ -54,7 +54,8 @@ object HeroRepo {
     const val SRC_TMDB = "tmdb"
     const val SRC_APPLE = "apple"
     const val SRC_SCENES = "scenes"
-    val SOURCES = listOf(SRC_TMDB to "TMDB", SRC_APPLE to "Apple TV (unofficial)", SRC_SCENES to "Built-in scenes")
+    const val SRC_AERIAL = "aerial"
+    val SOURCES = listOf(SRC_TMDB to "TMDB", SRC_APPLE to "Apple TV (unofficial)", SRC_SCENES to "Built-in scenes", SRC_AERIAL to "Local aerial videos")
     fun sourceLabel(id: String) = SOURCES.firstOrNull { it.first == id }?.second ?: id
 
     private const val REFRESH_MS = 6 * 3600_000L
@@ -98,7 +99,7 @@ object HeroRepo {
 
     /** Titles from the on-disk cache (works offline). */
     fun cachedTitles(ctx: Context, src: String): List<Slide> {
-        if (src == SRC_SCENES) return emptyList()
+        if (src == SRC_SCENES || src == SRC_AERIAL) return emptyList()
         val f = File(dir(ctx, src), "titles.json")
         if (!f.exists()) return emptyList()
         return try {
@@ -119,7 +120,7 @@ object HeroRepo {
     }
 
     fun isStale(ctx: Context, src: String): Boolean {
-        if (src == SRC_SCENES) return false
+        if (src == SRC_SCENES || src == SRC_AERIAL) return false
         val d = dir(ctx, src)
         val f = File(d, "titles.json")
         val attempt = File(d, "attempt").lastModified()
@@ -137,7 +138,7 @@ object HeroRepo {
 
     /** Fetches [src]'s current titles and their art. Returns true when the cache changed. Call off the UI thread. */
     fun refresh(ctx: Context, src: String): Boolean {
-        if (src == SRC_SCENES) return false
+        if (src == SRC_SCENES || src == SRC_AERIAL) return false
         val d = dir(ctx, src)
         try { File(d, "attempt").writeText(System.currentTimeMillis().toString()) } catch (e: Throwable) { }
         val items = if (src == SRC_TMDB) Tmdb.fetch(ctx) else appleItems(d) ?: return false

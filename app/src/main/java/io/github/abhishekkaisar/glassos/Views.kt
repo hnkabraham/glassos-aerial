@@ -35,7 +35,7 @@ class FocusAnim(private val v: View, private val scale: Float, private val onUpd
         private set
     private var anim: ValueAnimator? = null
 
-    fun set(focused: Boolean, instant: Boolean = forceInstant) {
+    fun set(focused: Boolean, instant: Boolean = forceInstant || Effects.reduceMotion) {
         anim?.cancel()
         val target = if (focused) 1f else 0f
         val s = if (focused) scale else 1f
@@ -170,7 +170,7 @@ class TileView(ctx: Context, val cardW: Int, val cardH: Int, private val labelH:
 
     /** Start tilted towards where focus came from, then spring back; the glare sweeps across meanwhile. */
     fun tilt(rx: Float, ry: Float, glareFrom: Float) {
-        if (FocusAnim.forceInstant) { rotationX = 0f; rotationY = 0f; glare = 0.3f; return }
+        if (FocusAnim.forceInstant || Effects.reduceMotion) { rotationX = 0f; rotationY = 0f; glare = 0.3f; invalidate(); return }
         rotationX = rx
         rotationY = ry
         animate().rotationX(0f).rotationY(0f)
@@ -190,9 +190,9 @@ class TileView(ctx: Context, val cardW: Int, val cardH: Int, private val labelH:
 
     private fun applyPicked() {
         if (picked) {
-            animate().scaleX(1.22f).scaleY(1.22f).translationY(-dp(8f)).setDuration(200).setUpdateListener { invalidate() }.start()
+            animate().scaleX(1.22f).scaleY(1.22f).translationY(-dp(8f)).setDuration(Effects.ms(200)).setUpdateListener { invalidate() }.start()
         } else {
-            animate().translationY(0f).setDuration(200).start()
+            animate().translationY(0f).setDuration(Effects.ms(200)).start()
             focus.set(isFocused)
         }
     }
@@ -204,7 +204,8 @@ class TileView(ctx: Context, val cardW: Int, val cardH: Int, private val labelH:
     fun setJiggle(on: Boolean, gentle: Boolean = false) {
         jiggle?.cancel()
         jiggle = null
-        if (!on) { rotation = 0f; return }
+        // Reduce motion: the lifted, enlarged tile alone shows which app is moving.
+        if (!on || Effects.reduceMotion) { rotation = 0f; return }
         val half = if (gentle) 260L else 150L
         val phase = (Math.random() * 1000).toLong()
         val deg = if (gentle) 1.1f else 1.3f
@@ -488,7 +489,7 @@ class Chevron(ctx: Context) : View(ctx) {
 }
 
 /** A settings row in tvOS style: transparent at rest, white with dark text when focused. */
-class RowView(ctx: Context, title: String) : LinearLayout(ctx) {
+open class RowView(ctx: Context, title: String) : LinearLayout(ctx) {
     val titleView = TextView(ctx)
     val valueView = TextView(ctx)
     var onClick: (() -> Unit)? = null
@@ -536,8 +537,32 @@ class RowView(ctx: Context, title: String) : LinearLayout(ctx) {
     }
 }
 
-/** Wallpaper thumbnail in the background picker. */
-class ThumbView(ctx: Context, private val tw: Int, private val th: Int, val wallId: String, private val label: String) : View(ctx) {
+/**
+ * A settings row whose value Left and Right step through (times, delays, levels); OK steps forward. The value shows
+ * between small arrows so the row reads as adjustable.
+ */
+class StepperRow(ctx: Context, title: String, private val onStep: (Int) -> Unit) : RowView(ctx, title) {
+    init { onClick = { onStep(1) } }
+
+    var value: String = ""
+        set(v) { field = v; valueView.text = "‹  $v  ›" }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> { onStep(-1); return true }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> { onStep(1); return true }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+}
+
+/** Wallpaper thumbnail in the background picker (also scene posters and app pickers). */
+class ThumbView(ctx: Context, private val tw: Int, private val th: Int, val wallId: String, label: String) : View(ctx) {
+    var label = label
+        set(v) { if (field != v) { field = v; invalidate() } }
+    /** Drawn faded: a hidden scene, still listed so it can be shown again. */
+    var dim = false
+        set(v) { if (field != v) { field = v; invalidate() } }
     var bitmap: Bitmap? = null
         set(v) {
             field = v
@@ -587,6 +612,7 @@ class ThumbView(ctx: Context, private val tw: Int, private val th: Int, val wall
             m.setScale(s, s)
             m.postTranslate((tw - b.width * s) / 2, (th - b.height * s) / 2)
             shaderPaint.shader?.setLocalMatrix(m)
+            shaderPaint.alpha = if (dim) 90 else 255
             c.drawRoundRect(rect, r, r, shaderPaint)
         } else {
             fill.color = 0x33FFFFFF
@@ -610,7 +636,7 @@ class ThumbView(ctx: Context, private val tw: Int, private val th: Int, val wall
             p.lineTo(cx + cr * 0.5f, cy - cr * 0.32f)
             c.drawPath(p, ring)
         }
-        text.alpha = ((0.65f + 0.35f * f) * 255).toInt()
+        text.alpha = ((0.65f + 0.35f * f) * (if (dim) 0.7f else 1f) * 255).toInt()
         val t = TextUtils.ellipsize(label, text, tw.toFloat(), TextUtils.TruncateAt.END).toString()
         c.drawText(t, tw / 2f, th + labelH * 0.72f + dp(2f) * f, text)
     }

@@ -27,7 +27,7 @@ import android.widget.TextView
 import android.widget.Toast
 
 /** Line glyphs for Control Center, drawn in a box of side s centred on (cx, cy). No vector assets. */
-enum class Glyph { NONE, POWER, WIFI, MOON, SPEAKER, TIMER, GAMEPAD, ACCESS, LOCK, GEAR, PEOPLE, PLAY, PAUSE, PREV, NEXT, SHIELD, TOGGLES, NOTE, CHECK, CLOSE, OPEN }
+enum class Glyph { NONE, POWER, WIFI, MOON, SPEAKER, TIMER, GAMEPAD, ACCESS, LOCK, GEAR, PEOPLE, PLAY, PAUSE, PREV, NEXT, SHIELD, TOGGLES, NOTE, CHECK, CLOSE, OPEN, SCENE }
 
 object Glyphs {
     private val path = Path()
@@ -206,6 +206,20 @@ object Glyphs {
             Glyph.CLOSE -> {
                 c.drawLine(cx - h * 0.5f, cy - h * 0.5f, cx + h * 0.5f, cy + h * 0.5f, p)
                 c.drawLine(cx + h * 0.5f, cy - h * 0.5f, cx - h * 0.5f, cy + h * 0.5f, p)
+            }
+            Glyph.SCENE -> {
+                // Mountains under a sun, in a frame.
+                r.set(cx - h * 0.9f, cy - h * 0.7f, cx + h * 0.9f, cy + h * 0.7f)
+                c.drawRoundRect(r, h * 0.18f, h * 0.18f, p)
+                path.reset()
+                path.moveTo(cx - h * 0.72f, cy + h * 0.52f)
+                path.lineTo(cx - h * 0.22f, cy - h * 0.12f)
+                path.lineTo(cx + h * 0.12f, cy + h * 0.26f)
+                path.lineTo(cx + h * 0.36f, cy + h * 0.02f)
+                path.lineTo(cx + h * 0.72f, cy + h * 0.52f)
+                c.drawPath(path, p)
+                p.style = Paint.Style.FILL
+                c.drawCircle(cx + h * 0.42f, cy - h * 0.34f, s * 0.07f, p)
             }
             Glyph.OPEN -> {
                 c.drawLine(cx - h * 0.45f, cy + h * 0.45f, cx + h * 0.55f, cy - h * 0.55f, p)
@@ -420,7 +434,7 @@ class ControlCenter(private val home: HomeScreen) : FrameLayout(home.ctx) {
         ui.removeCallbacks(tick); ui.post(tick)
         panel.pivotX = panelW.toFloat()
         panel.pivotY = 0f
-        if (instant) {
+        if (instant || Effects.reduceMotion) {
             dim.alpha = 1f; panel.alpha = 1f; panel.scaleX = 1f; panel.scaleY = 1f
             return
         }
@@ -448,7 +462,7 @@ class ControlCenter(private val home: HomeScreen) : FrameLayout(home.ctx) {
             returnFocus = null
             after?.invoke()
         }
-        if (instant) { done(); return }
+        if (instant || Effects.reduceMotion) { done(); return }
         dim.animate().alpha(0f).setDuration(180).start()
         panel.animate().alpha(0f).scaleX(0.35f).scaleY(0.2f).setDuration(190)
             .setInterpolator(DecelerateInterpolator(1.5f))
@@ -597,7 +611,10 @@ class ControlCenter(private val home: HomeScreen) : FrameLayout(home.ctx) {
             else button(Glyph.LOCK, "Parental") { open(FireIntents.parental(), "com.amazon.tv.parentalcontrols", "Choose Preferences, then Parental Controls") }
         val fire = button(Glyph.OPEN, "TV Settings") { close(instant = true) { home.openFireSettings() } }
         val gear = button(Glyph.GEAR, "GlassOS") { close(instant = true) { home.openSettings() } }
-        body.addView(grid(listOfNotNull(power, wifi, dnd, audio, timer, pads, acc, pc, fire, gear)))
+        val scenery = button(Glyph.SCENE, "Scenery") { close(instant = true) { home.openSceneBrowser() } }
+        // Only while the aerial scenery plays.
+        val nextScene = if (home.currentScene() == null) null else button(Glyph.NEXT, "Next Scene") { home.skipScene(1) }
+        body.addView(grid(listOfNotNull(power, wifi, dnd, audio, timer, pads, acc, pc, fire, gear, scenery, nextScene)))
     }
 
     /** A standard Settings page (Android TV and Google TV). */

@@ -125,6 +125,7 @@ class MainActivity : Activity(), HomeHost {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         if (requestCode == 7) home.onStoragePermission()
+        if (requestCode == 9) home.onWritePermission()
     }
 
     @Deprecated("Deprecated in Java")

@@ -30,11 +30,11 @@ android {
     buildToolsVersion = "34.0.0"
 
     defaultConfig {
-        applicationId = "io.github.abhishekkaisar.glassos"
+        applicationId = "io.github.abhishekkaisar.glassos.aerial"
         minSdk = 22
         targetSdk = 28
-        versionCode = 3
-        versionName = "1.0.2-beta"
+        versionCode = 4
+        versionName = "1.1.0-aerial.1"
         buildConfigField("String", "TMDB_API_KEY", "\"${tmdbKey.replace("\"", "")}\"")
     }
 
@@ -50,6 +50,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Keep the locally tested build upgradeable to the optimized personal build without losing settings.
+            signingConfigs.findByName("release")?.let { signingConfig = it }
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -66,5 +70,17 @@ android {
     lint {
         abortOnError = false
         checkReleaseBuilds = false
+        // Deliberate, and only this check: GlassOS Aerial is a sideloaded TV launcher, not a Google Play app, and keeps
+        // targetSdk 28 so shared storage (Movies/GlassAerial clips, Documents/GlassOS-Aerial backups, Pictures) keeps
+        // working as before on newer Android TV and Fire OS versions. ExpiredTargetSdkVersion is Play's publishing rule.
+        // Every other check stays on. See README > Building.
+        disable += "ExpiredTargetSdkVersion"
     }
+}
+
+dependencies {
+    // Unit tests of the pure logic (playlist, schedules, folders, backup validation) on the JVM. org.json is the
+    // reference implementation, standing in for Android's built-in copy, which is a stub in local unit tests.
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20231013")
 }

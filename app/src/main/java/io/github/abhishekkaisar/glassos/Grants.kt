@@ -29,8 +29,9 @@ object Grants {
         Grant("Device admin", "Sleep and the sleep timer", { Power.adminActive(it) }) { c ->
             listOf("dpm set-active-admin ${Power.admin(c).flattenToString()}")
         },
-        Grant("Storage", "Your profile photo and own backgrounds", { storage(it) }) { c ->
-            listOf("pm grant ${pkg(c)} ${Manifest.permission.READ_EXTERNAL_STORAGE}")
+        Grant("Storage", "Your photos, aerial videos and backups", { storage(it) }) { c ->
+            listOf("pm grant ${pkg(c)} ${Manifest.permission.READ_EXTERNAL_STORAGE}",
+                "pm grant ${pkg(c)} ${Manifest.permission.WRITE_EXTERNAL_STORAGE}")
         }
     )
 
@@ -95,6 +96,7 @@ object Grants {
         if (Build.VERSION.SDK_INT >= 26) "adb shell cmd notification allow_listener ${MediaListener.component(ctx).flattenToString()}"
         else "adb shell settings put secure enabled_notification_listeners ${MediaListener.component(ctx).flattenToString()}",
         "adb shell dpm set-active-admin ${Power.admin(ctx).flattenToString()}",
-        "adb shell pm grant ${pkg(ctx)} android.permission.READ_EXTERNAL_STORAGE"
+        "adb shell pm grant ${pkg(ctx)} android.permission.READ_EXTERNAL_STORAGE",
+        "adb shell pm grant ${pkg(ctx)} android.permission.WRITE_EXTERNAL_STORAGE"
     )
 }

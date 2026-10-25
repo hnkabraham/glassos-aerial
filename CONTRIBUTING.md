@@ -19,8 +19,11 @@ Thanks for helping. Issues and pull requests are welcome. Questions and ideas go
 Requirements: JDK 17 and the Android SDK (platform 34, build tools 34.0.0). No keys are needed.
 
 ```sh
-./gradlew assembleDebug lint   # app/build/outputs/apk/debug/app-debug.apk
+./gradlew testDebugUnitTest assembleDebug lint   # app/build/outputs/apk/debug/app-debug.apk
 ```
+
+The app targets API 28 on purpose (a sideloaded TV launcher using classic shared storage), so lint's Play-only
+`ExpiredTargetSdkVersion` check is turned off in `app/build.gradle.kts`; see README > Building.
 
 Without a TMDB key the Top Shelf shows the built-in scenes. To see real trending titles, get a free v3 API key at
 [themoviedb.org](https://www.themoviedb.org/settings/api) and put it in `local.properties` (which is not
