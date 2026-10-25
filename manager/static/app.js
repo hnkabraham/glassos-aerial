@@ -47,6 +47,21 @@ function posterFor(id) {
   return pending;
 }
 const descriptions = {
+  catalog: [
+    "A WORLD OF QUIET MOMENTS",
+    "Find a new horizon.",
+    "Choose your next scene. We’ll take care of the format.",
+  ],
+  appearance: [
+    "MAKE IT YOURS",
+    "A home with character.",
+    "Subtle palettes and familiar apps, dressed your way.",
+  ],
+  profiles: [
+    "KNOW YOUR DEVICES",
+    "Every TV, accounted for.",
+    "Compare what changed and keep a baseline you trust.",
+  ],
   overview: [
     "THE BIG PICTURE",
     "A little more calm.",
@@ -92,7 +107,11 @@ async function api(path, data) {
   return out;
 }
 const size = (n) =>
-  n >= 1e9 ? (n / 1e9).toFixed(2) + " GB" : (n / 1e6).toFixed(1) + " MB";
+  n >= 1e9
+    ? (n / 1e9).toFixed(2) + " GB"
+    : n >= 1e6
+      ? (n / 1e6).toFixed(1) + " MB"
+      : (n / 1000).toFixed(1) + " KB";
 function go(next) {
   page = next;
   document.querySelectorAll(".page").forEach((n) => (n.hidden = n.id !== next));
@@ -234,6 +253,7 @@ function render() {
     backupSignature = bs;
     renderBackups();
   }
+  renderExtras(d);
   const job = state.jobs.at(-1),
     busy = state.jobs.some((j) => j.status === "running");
   document
@@ -242,7 +262,10 @@ function render() {
       (b) =>
         (b.disabled =
           busy ||
-          (!selectedDevice && b.dataset.action !== "bundle") ||
+          (!selectedDevice &&
+            !["bundle", "catalog", "catalog-import"].includes(
+              b.dataset.action,
+            )) ||
           (b.dataset.action === "bundle" && !state.bundle_available)),
     );
   $('#import-form button[type="submit"]')?.toggleAttribute("disabled", busy);
@@ -413,7 +436,10 @@ async function refresh() {
 }
 async function action(name, extra = {}) {
   try {
-    if (name !== "bundle" && !selectedDevice)
+    if (
+      !["bundle", "catalog", "catalog-import"].includes(name) &&
+      !selectedDevice
+    )
       throw Error("Add or choose a Fire Stick first.");
     notice("");
     await api("/api/action", {
@@ -560,3 +586,206 @@ $("#import-form").onsubmit = async (e) => {
 };
 refresh();
 setInterval(refresh, 2000);
+
+let catalogSignature = "",
+  iconSignature = "",
+  appSignature = "";
+function renderChanges(target, changes, empty) {
+  target.replaceChildren();
+  if (!changes?.length) {
+    target.append(el("p", "fine", empty));
+    return;
+  }
+  for (const c of changes)
+    row(
+      target,
+      c.label,
+      `${String(c.before)} → ${String(c.after)}`,
+      !c.attention,
+    );
+}
+function renderExtras(device) {
+  const h = device?.health,
+    profile = device?.profile;
+  $("#profile-title").textContent = profile?.title || "Get to know your TV.";
+  const details = $("#profile-details");
+  details.replaceChildren();
+  if (h) {
+    row(details, "Platform", profile?.platform || "Unknown");
+    row(details, "Model", h.model);
+    row(details, "Android", `${h.android || "—"} · API ${h.sdk}`);
+    row(details, "Firmware", h.build);
+    row(
+      details,
+      "RAM visible to Android",
+      h.memory_bytes ? size(h.memory_bytes) : "Not recorded",
+    );
+    row(details, "Supported ABIs", h.abi || "Not recorded");
+    row(details, "GlassOS", h.version);
+  } else
+    details.append(el("p", "fine", "Run a device check to build its profile."));
+  renderChanges(
+    $("#profile-changes"),
+    device?.changes,
+    device?.previous_health
+      ? "No tracked configuration changes."
+      : "A second check will show what changed.",
+  );
+  const delta =
+    h && device.previous_health
+      ? h.free_bytes - device.previous_health.free_bytes
+      : null;
+  $("#storage-change").textContent =
+    delta === null
+      ? ""
+      : `Free storage: ${delta >= 0 ? "+" : "−"}${size(Math.abs(delta))} since the last check.`;
+  $("#baseline-date").textContent = device?.baseline
+    ? "Saved " + new Date(device.baseline.checked_at * 1000).toLocaleString()
+    : "Save a baseline before setting up or changing a device.";
+  renderChanges(
+    $("#baseline-changes"),
+    device?.baseline_changes,
+    device?.baseline
+      ? "Matches the saved configuration baseline."
+      : "No baseline saved yet.",
+  );
+  const apps = device?.apps || [],
+    aSig = JSON.stringify(apps);
+  if (aSig !== appSignature) {
+    appSignature = aSig;
+    const select = $("#icon-package"),
+      old = select.value;
+    select.replaceChildren();
+    const prompt = el(
+      "option",
+      "",
+      apps.length ? "Choose an app" : "Read apps from your TV first",
+    );
+    prompt.value = "";
+    select.append(prompt);
+    apps.forEach((pkg) => {
+      const o = el("option", "", pkg);
+      o.value = pkg;
+      select.append(o);
+    });
+    if (apps.includes(old)) select.value = old;
+  }
+  const icons = state.icons || {},
+    iSig = JSON.stringify(icons) + selectedDevice;
+  if (iSig !== iconSignature) {
+    iconSignature = iSig;
+    const list = $("#icon-list");
+    list.replaceChildren();
+    if (!Object.keys(icons).length)
+      list.append(el("p", "fine", "No custom app images saved yet."));
+    for (const [pkg, info] of Object.entries(icons)) {
+      const r = el("div", "check-row");
+      r.append(el("span", "", pkg), el("small", "", size(info.bytes)));
+      const button = el("button", "secondary", "Restore original");
+      button.dataset.action = "icon-reset";
+      button.onclick = () => action("icon-reset", { package: pkg });
+      r.append(button);
+      list.append(r);
+    }
+  }
+  const sig =
+    JSON.stringify(state.catalog) +
+    $("#catalog-search").value +
+    JSON.stringify(state.scenes.map((s) => s.catalog_id));
+  if (sig !== catalogSignature) {
+    catalogSignature = sig;
+    renderCatalog();
+  }
+}
+function renderCatalog() {
+  const entries = state.catalog?.entries || [],
+    query = $("#catalog-search").value.trim().toLowerCase();
+  const visible = entries.filter((e) =>
+    `${e.title} ${e.place}`.toLowerCase().includes(query),
+  );
+  $("#catalog-count").textContent = entries.length
+    ? `${visible.length} of ${entries.length} scenes`
+    : "Load a feed to begin";
+  const list = $("#catalog-list");
+  list.replaceChildren();
+  if (!visible.length)
+    list.append(
+      el(
+        "p",
+        "fine",
+        entries.length
+          ? "No scenes match your search."
+          : "Your catalog will appear here.",
+      ),
+    );
+  for (const entry of visible.slice(0, 200)) {
+    const card = el("article", "panel catalog-card");
+    card.append(
+      el("span", "eyebrow", entry.quality + " · SILENT AFTER IMPORT"),
+      el("h3", "", entry.title),
+      el("p", "", entry.place || "Aerial scene"),
+    );
+    const select = el("select");
+    options(select, false, entry.collection);
+    select.setAttribute("aria-label", "Collection for " + entry.title);
+    card.append(select);
+    const imported = state.scenes.some((s) => s.catalog_id === entry.id);
+    const button = el(
+      "button",
+      "primary",
+      imported ? "In your library" : "Download & compress",
+    );
+    if (!imported) {
+      button.dataset.action = "catalog-import";
+      button.onclick = () =>
+        action("catalog-import", {
+          entry: entry.id,
+          seconds: $("#catalog-seconds").value,
+          collection: select.value,
+        });
+    }
+    button.disabled = imported;
+    card.append(button);
+    const link = el("a", "fine", "View source video ↗");
+    link.href = entry.url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    card.append(link);
+    list.append(card);
+  }
+  if (visible.length > 200)
+    list.append(
+      el(
+        "p",
+        "fine",
+        "Showing the first 200 matches. Search to narrow this catalog.",
+      ),
+    );
+}
+$("#catalog-search").oninput = () => render();
+$("#catalog-form").onsubmit = (e) => {
+  e.preventDefault();
+  action("catalog", { url: $("#feed-url").value });
+};
+$("#icon-form").onsubmit = async (e) => {
+  e.preventDefault();
+  try {
+    const file = $("#icon-file").files[0];
+    if (!file) throw Error("Choose an image first.");
+    const response = await fetch("/api/icon", {
+      method: "POST",
+      headers: {
+        "X-GlassOS-Token": token,
+        "X-Package": $("#icon-package").value,
+      },
+      body: file,
+    });
+    const result = await response.json();
+    if (!response.ok) throw Error(result.error);
+    $("#icon-file").value = "";
+    notice("");
+    await refresh();
+  } catch (error) {
+    notice(error.message);
+  }
+};

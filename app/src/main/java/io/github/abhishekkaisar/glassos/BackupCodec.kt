@@ -22,7 +22,10 @@ data class DisplayBackup(
     val nightLevel: Int? = null,
     val reduceTransparency: Boolean? = null,
     val reduceMotion: Boolean? = null,
-    val mostUsed: Boolean? = null
+    val mostUsed: Boolean? = null,
+    val theme: String? = null,
+    val movingClock: Boolean? = null,
+    val customArt: Boolean? = null
 )
 
 data class SceneryBackup(
@@ -111,6 +114,9 @@ object BackupCodec {
             s.topShelf?.takeIf { it in TOP_SHELF_IDS }?.let { j.put("topShelf", it) }
             s.scene?.takeIf { it in SCENE_IDS }?.let { j.put("background", it) }
             s.cinemaDelaySec?.takeIf { it in CINEMA_DELAYS }?.let { j.put("cinemaDelaySec", it) }
+            s.theme?.takeIf { it in Themes.ids }?.let { j.put("theme", it) }
+            s.movingClock?.let { j.put("movingClock", it) }
+            s.customArt?.let { j.put("customArt", it) }
             s.cinemaClock?.let { j.put("cinemaClock", it) }
             val n = JSONObject()
             s.nightEnabled?.let { n.put("enabled", it) }
@@ -228,13 +234,17 @@ object BackupCodec {
         val level = n?.let { int(it, "level", "display.night.level") }
         for ((k, v) in listOf("start" to start, "end" to end)) if (v != null && v !in 0 until NightSchedule.DAY) fail("display.night.$k must be minutes of the day (0 to 1439).")
         if (level != null && level !in 0 until NIGHT_LEVELS) fail("display.night.level must be 0, 1 or 2.")
+        val theme = str(d, "theme", "display.theme")
+        if (theme != null && theme !in Themes.ids) fail("Unknown glass theme.")
         return DisplayBackup(
             sound = bool(d, "sound", "display.sound"), topShelf = shelf, scene = scene, cinemaDelaySec = delay,
             cinemaClock = bool(d, "cinemaClock", "display.cinemaClock"),
             nightEnabled = n?.let { bool(it, "enabled", "display.night.enabled") }, nightStart = start, nightEnd = end, nightLevel = level,
             reduceTransparency = bool(d, "reduceTransparency", "display.reduceTransparency"),
             reduceMotion = bool(d, "reduceMotion", "display.reduceMotion"),
-            mostUsed = bool(d, "mostUsed", "display.mostUsed"))
+            mostUsed = bool(d, "mostUsed", "display.mostUsed"), theme = theme,
+            movingClock = bool(d, "movingClock", "display.movingClock"),
+            customArt = bool(d, "customArt", "display.customArt"))
     }
 
     private fun scenery(o: JSONObject): SceneryBackup? {

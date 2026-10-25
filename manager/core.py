@@ -14,6 +14,9 @@ import threading
 import time
 import uuid
 
+import catalog
+import profiles
+
 PACKAGE = "io.github.abhishekkaisar.glassos.aerial"
 ACTIVITY = PACKAGE + "/io.github.abhishekkaisar.glassos.MainActivity"
 REMOTE = "/sdcard/Movies/GlassAerial"
@@ -231,7 +234,7 @@ class Manager:
                 ],
             }
         )
-        for folder in ["media", "uploads", "backups", "reports", "recovery"]:
+        for folder in ["media", "uploads", "backups", "reports", "recovery", "icons"]:
             (self.data / folder).mkdir(exist_ok=True)
         # Incomplete uploads cannot be valid library entries; remove only our own staging files at startup.
         for f in (self.data / "uploads").glob("*.upload"):
@@ -320,6 +323,12 @@ class Manager:
                 ("sdk", "ro.build.version.sdk"),
             ]
         }
+        for key, prop in [("manufacturer", "ro.product.manufacturer"), ("device", "ro.product.device"),
+                          ("android", "ro.build.version.release"), ("abi", "ro.product.cpu.abilist")]:
+            props[key] = d.shell("getprop", prop)
+        memory = d.shell("cat", "/proc/meminfo")
+        mem = re.search(r"MemTotal:\s+(\d+) kB", memory)
+        props["memory_bytes"] = int(mem.group(1)) * 1024 if mem else None
         props["free_bytes"] = d.free()
         props["home"] = d.shell(
             "cmd",
@@ -370,8 +379,17 @@ class Manager:
         props["checked_at"] = time.time()
         with self.lock:
             row = next(x for x in self.state["devices"] if x["id"] == id)
+            previous = row.get("health")
+            row["previous_health"] = previous
             row["health"] = props
+            row["profile"] = profiles.describe(props)
+            row["changes"] = profiles.compare(previous, props)
+            row["baseline_changes"] = profiles.compare(row.get("baseline"), props)
             self.save()
+        history = self.data / "reports" / id
+        atomic_json(history / (str(time.time_ns()) + ".json"), props)
+        for old in sorted(history.glob("*.json"))[:-30]:
+            old.unlink()
         atomic_json(self.data / "reports" / f"{id}-health.json", props)
         log(
             "Checks saved. Package disables are partial telemetry reduction; native services may still run."
@@ -883,3 +901,122 @@ class Manager:
             "GlassOS updated and installed checksum verified; recovery files are saved on this Mac."
         )
         return self.inspect(id, log)
+
+    def baseline(self, id, log):
+        current = self.inspect(id, log)
+        with self.lock:
+            row = next(x for x in self.state["devices"] if x["id"] == id)
+            row["baseline"] = current
+            row["baseline_changes"] = []
+            self.save()
+        atomic_json(self.data / "reports" / f"{id}-baseline.json", current)
+        log("Saved this device's current state as its comparison baseline.")
+        return {"checked_at": current["checked_at"]}
+
+    def load_catalog(self, url, log):
+        url = url.strip() if isinstance(url, str) and url.strip() else catalog.COMMUNITY
+        log("Reading the scenery catalog; videos are downloaded only when you import one…")
+        entries = catalog.parse(catalog.fetch(url), url)
+        with self.lock:
+            self.state["catalog"] = {"url": url, "loaded_at": time.time(), "entries": entries}
+            self.save()
+        log(f"{len(entries)} SDR scenes available. Select a scene to download and compress.")
+        return {"count": len(entries)}
+
+    def import_catalog(self, id, seconds, collection, log):
+        with self.lock:
+            entry = next((dict(x) for x in self.state.get("catalog", {}).get("entries", []) if x["id"] == id), None)
+            if any(x.get("catalog_id") == id for x in self.state["scenes"]):
+                raise Error("This catalog scene is already in your library.")
+        if not entry:
+            raise Error("Refresh the catalog and choose a scene.")
+        if str(seconds) not in ("30", "60", "90", "120", "180") or collection not in COLLECTIONS or collection == "all":
+            raise Error("Choose a clip length and a scene collection.")
+        source = self.data / "uploads" / (uuid.uuid4().hex + ".upload")
+        try:
+            log(f"Downloading {entry['title']} ({entry['quality']})…")
+            catalog.fetch(entry["url"], source, 4_000_000_000, log)
+            result = self.import_video(source, "catalog-video", entry["title"], collection, seconds, log)
+            with self.lock:
+                row = next(x for x in self.state["scenes"] if x["id"] == result["scene"])
+                row.update(catalog_id=id, source_url=entry["url"], source_feed=entry["feed"])
+                self.save()
+            return result
+        finally:
+            source.unlink(missing_ok=True)
+
+    def list_apps(self, id, log):
+        d = self.device(id)
+        packages = set()
+        for category in ("android.intent.category.LEANBACK_LAUNCHER", "android.intent.category.LAUNCHER"):
+            output = d.shell("cmd", "package", "query-activities", "--brief", "-a", "android.intent.action.MAIN", "-c", category)
+            packages.update(re.findall(r"(?m)^\s*([A-Za-z][A-Za-z0-9_.]+)/[A-Za-z0-9_.$]+\s*$", output))
+        packages.discard(PACKAGE)
+        packages.difference_update(INSTAGRAM)
+        with self.lock:
+            row = next(x for x in self.state["devices"] if x["id"] == id)
+            row["apps"] = sorted(packages)
+            self.save()
+        log(f"Found {len(packages)} launchable apps.")
+        return {"apps": sorted(packages)}
+
+    def import_icon(self, source, package, log):
+        source = Path(source)
+        try:
+            if not isinstance(package, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+", package) or len(package) > 180:
+                raise Error("Choose an app package for this image.")
+            probe = json.loads(run([tool("ffprobe"), "-v", "error", "-protocol_whitelist", "file,pipe", "-show_streams", "-of", "json", source]))
+            streams = probe.get("streams", [])
+            image = next((s for s in streams if s.get("codec_type") == "video"), {})
+            if image.get("codec_name") not in ("png", "mjpeg", "webp") or not 0 < image.get("width", 0) * image.get("height", 0) <= 40_000_000:
+                raise Error("Choose a PNG, JPEG or WebP image up to 40 megapixels.")
+            target = self.data / "icons" / (package + ".png")
+            stage = target.with_name(uuid.uuid4().hex + ".png")
+            try:
+                run([tool("ffmpeg"), "-v", "error", "-nostdin", "-protocol_whitelist", "file,pipe", "-i", source,
+                     "-frames:v", "1", "-vf", "scale=400:225:force_original_aspect_ratio=decrease,pad=400:225:(ow-iw)/2:(oh-ih)/2:color=0x161c28,setsar=1",
+                     "-update", "1", stage])
+                os.replace(stage, target)
+            finally:
+                stage.unlink(missing_ok=True)
+            with self.lock:
+                icons = self.state.setdefault("icons", {})
+                icons[package] = {"sha256": digest(target), "bytes": target.stat().st_size}
+                self.save()
+            log("Custom app art saved. Sync app art to send it to the selected TV.")
+            return {"package": package}
+        finally:
+            source.unlink(missing_ok=True)
+
+    def sync_icons(self, id, log):
+        with self.lock:
+            icons = dict(self.state.get("icons", {}))
+        d = self.device(id)
+        if not icons:
+            raise Error("Import an app image first.")
+        files = [(self.data / "icons" / (name(pkg) + ".png"), pkg, row) for pkg, row in icons.items()]
+        for local, pkg, row in files:
+            if digest(local) != row["sha256"]:
+                raise Error("An app image changed; import it again before syncing.")
+        if d.free() < RESERVE + sum(r["bytes"] for r in icons.values()):
+            raise Error("Keep at least 400 MiB free on the TV.")
+        remote = "/sdcard/Pictures/GlassOS/icons"
+        d.shell("mkdir", "-p", remote)
+        for local, pkg, row in files:
+            d.put(local, remote + "/" + pkg + ".png", row["sha256"])
+            log("Synced art for " + pkg)
+        d.start("refresh")
+        return {"count": len(files)}
+
+    def reset_icon(self, id, package, log):
+        # Only the selected, manager-owned artwork is removed; original app resources stay intact.
+        if not isinstance(package, str) or package not in self.state.get("icons", {}):
+            raise Error("Choose one of your saved custom app images.")
+        d = self.device(id)
+        d.shell("rm", "-f", "/sdcard/Pictures/GlassOS/icons/" + name(package) + ".png")
+        d.start("refresh")
+        with self.lock:
+            self.state["icons"].pop(package)
+            self.save()
+        (self.data / "icons" / (package + ".png")).unlink(missing_ok=True)
+        log("Restored this app's original art on the selected TV and removed its saved replacement.")

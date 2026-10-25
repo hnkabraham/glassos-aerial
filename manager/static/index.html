@@ -23,6 +23,15 @@
         ><button class="nav" data-page="backups">
           Settings backups <span>04</span>
         </button>
+        <button class="nav" data-page="catalog">
+          Scenery catalog <span>05</span>
+        </button>
+        <button class="nav" data-page="appearance">
+          Make it yours <span>06</span>
+        </button>
+        <button class="nav" data-page="profiles">
+          Device profiles <span>07</span>
+        </button>
       </nav>
       <div class="device-picker">
         <label for="device">YOUR FIRE STICK</label
@@ -208,6 +217,150 @@
             App layout, folders, scenery favourites and display settings. Videos
             are synced separately. Accounts, permissions and the Home-button
             setup stay with each device.
+          </p>
+        </div>
+      </section>
+      <section id="catalog" class="page" hidden>
+        <div class="panel">
+          <h2>Find your next view.</h2>
+          <p class="intro">
+            Browse an Aerial-compatible JSON feed, then download just the scenes
+            you want. Videos are compressed on this Mac and played locally on
+            your TV.
+          </p>
+          <form id="catalog-form" class="feed-form">
+            <label
+              >Feed URL<input
+                id="feed-url"
+                type="url"
+                placeholder="Leave blank for Aerial Community"
+            /></label>
+            <button class="primary" type="submit">Load catalog</button>
+          </form>
+          <p class="fine">
+            Default:
+            <a
+              href="https://github.com/AerialScreensaver/AerialCommunity"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Aerial Community</a
+            >. Public HTTPS feeds with SDR video URLs. Source downloads may be
+            much larger than the compressed clip. Videos remain subject to their
+            creators’ terms.
+          </p>
+        </div>
+        <div class="catalog-toolbar">
+          <label
+            >Find a place<input
+              id="catalog-search"
+              type="search"
+              placeholder="Search titles and places"
+          /></label>
+          <label
+            >Clip length<select id="catalog-seconds">
+              <option value="30">30 seconds</option>
+              <option value="60">60 seconds</option>
+              <option value="90" selected>90 seconds</option>
+              <option value="120">2 minutes</option>
+              <option value="180">3 minutes</option>
+            </select></label
+          >
+          <span id="catalog-count"></span>
+        </div>
+        <div id="catalog-list" class="catalog-grid"></div>
+      </section>
+      <section id="appearance" class="page" hidden>
+        <div class="panel">
+          <h2>A little more you.</h2>
+          <p>
+            On your TV, open
+            <b>Settings → Scenery and display → Glass theme</b> to choose a
+            palette. The cinema clock now moves between corners each minute; you
+            can turn that off in the same panel.
+          </p>
+          <div class="theme-swatches">
+            <span class="swatch glass">Classic glass</span
+            ><span class="swatch coast">Coast</span
+            ><span class="swatch forest">Forest</span
+            ><span class="swatch ember">Ember</span
+            ><span class="swatch midnight">Midnight</span>
+          </div>
+        </div>
+        <div class="panel art-panel">
+          <div class="section-heading">
+            <h2>App art, your way.</h2>
+            <button class="secondary" data-action="apps">
+              Read apps from TV
+            </button>
+          </div>
+          <p>
+            Choose an app and a PNG, JPEG or WebP image. We’ll fit it to a 400 ×
+            225 tile. Sync the saved art to any of your TVs; themes and the
+            custom-art switch travel with settings backups.
+          </p>
+          <form id="icon-form" class="feed-form">
+            <label
+              >App package<select id="icon-package" required>
+                <option value="">Read apps from your TV first</option>
+              </select></label
+            >
+            <label
+              >Image<input
+                id="icon-file"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                required
+            /></label>
+            <button class="primary" type="submit">Save app art</button>
+          </form>
+          <div class="section-heading">
+            <h3>Saved replacements</h3>
+            <button class="primary" data-action="icons">
+              Sync app art to TV
+            </button>
+          </div>
+          <div id="icon-list" class="check-list"></div>
+          <p class="fine">
+            The TV’s Custom app art switch restores original art without
+            deleting your files. “Restore original” below removes that saved
+            replacement from this Mac and the selected TV; other TVs keep their
+            copies.
+          </p>
+        </div>
+      </section>
+      <section id="profiles" class="page" hidden>
+        <div class="section-heading">
+          <h2 id="profile-title">Get to know your TV.</h2>
+          <button class="primary" data-action="inspect">Check device</button>
+        </div>
+        <div class="health-grid">
+          <article class="panel">
+            <h3>Observed hardware & software</h3>
+            <div id="profile-details" class="check-list"></div>
+            <p class="fine">
+              Recorded from the selected device. A model match does not
+              establish exploit or launcher compatibility.
+            </p>
+          </article>
+          <article class="panel">
+            <h3>Since the last check</h3>
+            <div id="profile-changes" class="check-list"></div>
+            <p id="storage-change" class="fine"></p>
+          </article>
+        </div>
+        <div class="panel baseline-panel">
+          <div class="section-heading">
+            <h3>Your saved baseline</h3>
+            <button class="secondary" data-action="baseline">
+              Use current state as baseline
+            </button>
+          </div>
+          <p id="baseline-date"></p>
+          <div id="baseline-changes" class="check-list"></div>
+          <p class="fine">
+            Each check keeps a local report; the newest 30 checks per device are
+            retained. Free storage fluctuates and is shown separately from
+            configuration changes.
           </p>
         </div>
       </section>

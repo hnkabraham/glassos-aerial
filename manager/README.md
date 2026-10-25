@@ -36,7 +36,29 @@ Recovery APKs and their records stay under the data folder's `recovery/`. Androi
 - Edit titles and collections on each card. The collection buttons filter the browser; the **Sync** checkboxes select files for transfer.
 - **Sync selected to TV** verifies local hashes, skips matching files already on the TV, checks free space, and uploads changed files under temporary names. Only a verified file is renamed into place. Metadata and the daily schedule follow successful media transfers. A disconnected transfer can be retried safely.
 
-The budget is a limit for the selected transfer collection, in decimal MB. The manager also requires at least 400 MiB free space beyond the staged transfer. It **does not delete existing or deselected videos** from the TV; deselecting a scene stops future copying, not playback of a copy already there. Use the TV's Hide scene control to exclude an existing scene from playback. It also does not automatically download third-party media.
+The budget is a limit for the selected transfer collection, in decimal MB. The manager also requires at least 400 MiB free space beyond the staged transfer. It **does not delete existing or deselected videos** from the TV; deselecting a scene stops future copying, not playback of a copy already there. Use the TV's Hide scene control to exclude an existing scene from playback. Catalog videos are downloaded only when you explicitly choose **Download & compress**.
+
+## Scenery catalog
+
+Open **Scenery catalog** and choose **Load catalog**. A blank URL uses [Aerial Community](https://github.com/AerialScreensaver/AerialCommunity); paste another public HTTPS Aerial-compatible JSON URL to use that feed. Search titles/places, choose a collection and maximum clip length, then **Download & compress**. The result appears in your library for normal verified sync. A short source stays short; no artificial looping is added.
+
+The parser accepts an `assets` array (or a top-level array), reads `title`, `accessibilityLabel`, and `scene`, and prefers `url-1080-H264`, then `url-1080-SDR`, `url-720-H264`, and `url-4K-SDR`. HDR-only entries are skipped. Feed limits are 5 MiB / 5,000 assets; source downloads are capped at 4 GB and 30 minutes with a 1 GB Mac disk reserve. URLs must be public HTTPS, without credentials or custom ports; local-network feeds are not supported. Redirect destinations are checked too. Videos and posters stay local, and source URLs are kept with their library entries. Imports from the same feed/video are deduplicated.
+
+Feed availability and media rights belong to their providers. The catalog does not grant redistribution rights or bundle third-party videos with GlassOS. Preview links open the source video in a separate tab; the browser catalog does not stream thumbnails or download the entire feed's videos.
+
+## Themes and custom app art
+
+Choose **Settings → Scenery and display → Glass theme** on the TV: Classic glass, Coast, Forest, Ember or Midnight. The default Classic palette retains the existing look. **Move cinema clock** defaults on and changes corners once a minute while cinema mode is active. Switching it off fixes the clock at bottom right. Movement uses discrete repositioning, including under Reduce motion; it does not add a continuous animation or guarantee protection from burn-in.
+
+In **Make it yours**, read apps from the selected TV, choose a package, upload a PNG/JPEG/WebP image (up to 8 MiB / 40 megapixels), and save it. The manager fits it into a 400 × 225 PNG with a dark surround. **Sync app art to TV** verifies hashes and stages each replacement under `/sdcard/Pictures/GlassOS/icons/<package>.png`, then refreshes the launcher. Read-storage access is required on the TV. No app package is modified.
+
+The TV's **Custom app art** switch lets you use original app icons without removing the images. **Restore original** in the manager removes that one saved replacement from the Mac and selected TV; other devices retain their copies. Sync your art separately to each stick. Portable settings backups include the theme, clock movement and custom-art switch, but exclude image files. Invalid/oversized/missing TV images fall back to the app's original resources.
+
+## Device profiles and comparisons
+
+**Device profiles** records model, firmware, Android API/version, supported ABIs and RAM visible to Android. It compares each health check with the previous check. **Use current state as baseline** first reads the device again, then saves an explicit baseline for that device. Future checks show changes to the launcher version, Home handler, firmware, privacy values, package-disable states and verified Instagram blockers. Free-storage changes are shown separately because they fluctuate.
+
+The newest 30 reports per device are retained in `reports/<device-id>/`; the baseline is retained separately until replaced. Reports are private local files. A profile is an observation, not a compatibility guarantee or a cleanup prescription; it never applies debloat/root/Home changes.
 
 ## Daily rhythm
 

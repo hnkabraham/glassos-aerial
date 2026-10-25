@@ -290,3 +290,12 @@ Android versions, and so it behaves the same on old Fire OS. Google Play's minim
 sideloaded launcher, so the build turns off that one lint check, `ExpiredTargetSdkVersion`
 ([app/build.gradle.kts](../app/build.gradle.kts)); every other lint check stays on. Raising the target API would mean moving clip and backup
 access to scoped storage first.
+
+
+## Themes, app artwork and the moving clock
+
+In Settings's **Scenery and display** section, use Left/Right on **Glass theme** to choose Classic glass, Coast, Forest, Ember or Midnight. These change glass-panel colours without replacing your scenery. Classic is the default. **Move cinema clock** moves the clock between four safe corners on minute ticks; turn it off for the original bottom-right placement. The **Cinema clock** switch still controls visibility.
+
+Use the [Mac manager's Make it yours page](../manager/README.md#themes-and-custom-app-art) to create and sync custom app tiles. Alternatively, copy a small PNG named after an app's package to `/sdcard/Pictures/GlassOS/icons/` and restart or refresh GlassOS. The app limits file size to 2 MiB and image dimensions to 2048 × 2048, decodes at a bounded resolution, and falls back to the app's original art if loading fails. The manager produces 400 × 225 images that fit these limits.
+
+Themes and the custom-art/clock switches travel in settings backups. Image files travel separately. Older backups leave the new choices unchanged.

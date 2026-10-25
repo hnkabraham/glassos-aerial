@@ -166,7 +166,7 @@ class MainActivity : Activity(), HomeHost {
             "backup" -> { home.exportBackup(); true }
             "restore" -> { home.importBackup(); true }
             "scenery" -> { home.openSceneBrowser(); true }
-            "refresh" -> { home.refreshSceneLibrary(); true }
+            "refresh" -> { home.refreshSceneLibrary(); home.loadApps(); true }
             else -> false
         }
     }

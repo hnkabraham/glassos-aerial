@@ -43,7 +43,7 @@ than one device is attached. For a newly connected device, the person must accep
 
 ```sh
 adb devices -l
-adb -s <device> install -r GlassOS-Aerial-1.4.0.apk
+adb -s <device> install -r GlassOS-Aerial-1.5.0.apk
 adb -s <device> shell am start -n io.github.abhishekkaisar.glassos.aerial/io.github.abhishekkaisar.glassos.MainActivity
 ```
 

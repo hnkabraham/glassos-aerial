@@ -328,7 +328,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         root.addView(sceneLabel, FrameLayout.LayoutParams(sw * 50 / 100, -2, Gravity.TOP or Gravity.START).apply {
             leftMargin = sw * 60 / 1920; topMargin = sh * 44 / 1080
         })
-        // Cinema mode's clock, bottom right, only while the rest of the home is faded out.
+        // Cinema clock moves between safe corners once per minute while the rest of home is faded out.
         cinemaClock = TextView(ctx).apply {
             textSize = 54f
             typeface = Fonts.light
@@ -596,6 +596,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         val fmt = if (android.text.format.DateFormat.is24HourFormat(ctx)) "H:mm" else "h:mm a"
         gear.time = android.text.format.DateFormat.format(fmt, System.currentTimeMillis()).toString().uppercase()
         if (::cinemaClock.isInitialized) cinemaClock.text = gear.time
+        if (cinema) positionCinemaClock()
         // The minute tick, time and time zone changes all land here: night mode follows them without a timer.
         applyNight()
         if (::aerial.isInitialized && prefs.sceneCollection == "scheduled" && prefs.topShelf == HeroRepo.SRC_AERIAL)
@@ -1575,6 +1576,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         home.animate().cancel()
         home.animate().alpha(0f).setDuration(Effects.fade(900)).withLayer().start()
         if (prefs.cinemaClock) {
+            positionCinemaClock()
             cinemaClock.visibility = View.VISIBLE
             cinemaClock.animate().cancel()
             cinemaClock.animate().alpha(1f).setDuration(Effects.fade(900)).start()
@@ -1641,6 +1643,16 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
 
     // ---------- Settings applied at once, backups ----------
 
+    private fun positionCinemaClock() {
+        if (!::cinemaClock.isInitialized) return
+        val corner = CinemaPosition.corner(android.os.SystemClock.elapsedRealtime() / 60000L, prefs.movingClock)
+        val vertical = if (corner < 2) Gravity.TOP else Gravity.BOTTOM
+        val horizontal = if (corner == 0 || corner == 3) Gravity.LEFT else Gravity.RIGHT
+        cinemaClock.layoutParams = FrameLayout.LayoutParams(-2, -2, vertical or horizontal).apply {
+            setMargins(sw * 64 / 1920, sh * 48 / 1080, sw * 64 / 1920, sh * 48 / 1080)
+        }
+    }
+
     /** Display settings changed (effects, night, cinema): apply them now. */
     fun settingsChanged() {
         Effects.load(prefs)
@@ -1658,6 +1670,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         usagePending = false
         usage = AppUsage.Snapshot()
         settingsChanged()
+        loadApps()
         reloadDock()
         setWallpaper(prefs.scene, save = false)
         HomeShare.main?.takeIf { it !== this }?.let { it.reloadDock(); it.setWallpaper(it.prefs.scene, save = false) }

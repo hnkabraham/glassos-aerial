@@ -113,6 +113,18 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("cinemaClock", true)
         set(v) { sp.edit().putBoolean("cinemaClock", v).apply() }
 
+    var movingClock: Boolean
+        get() = sp.getBoolean("movingClock", true)
+        set(v) { sp.edit().putBoolean("movingClock", v).apply() }
+
+    var theme: String
+        get() = Themes.get(sp.getString("theme", "glass") ?: "glass").id
+        set(v) { sp.edit().putString("theme", Themes.get(v).id).apply() }
+
+    var customArt: Boolean
+        get() = sp.getBoolean("customArt", true)
+        set(v) { sp.edit().putBoolean("customArt", v).apply() }
+
     var nightEnabled: Boolean
         get() = sp.getBoolean("night", false)
         set(v) { sp.edit().putBoolean("night", v).apply() }
@@ -156,7 +168,7 @@ class Prefs(ctx: Context) {
         display = DisplayBackup(sound = sound, topShelf = topShelf, scene = scene.takeIf { it in BackupCodec.SCENE_IDS },
             cinemaDelaySec = cinemaDelaySec, cinemaClock = cinemaClock, nightEnabled = nightEnabled, nightStart = nightStart,
             nightEnd = nightEnd, nightLevel = nightLevel, reduceTransparency = reduceTransparency, reduceMotion = reduceMotion,
-            mostUsed = mostUsed),
+            mostUsed = mostUsed, theme = theme, movingClock = movingClock, customArt = customArt),
         scenery = SceneryBackup(shuffle = sceneShuffle, favoritesOnly = sceneFavoritesOnly, labels = sceneLabels,
             favorites = sceneFavorites.sorted(), hidden = sceneHidden.sorted(), collection = sceneCollection))
 
@@ -175,6 +187,9 @@ class Prefs(ctx: Context) {
             s.topShelf?.let { e.putString("topShelf", it) }
             s.scene?.let { e.putString("fallback", it) }
             s.cinemaDelaySec?.let { e.putInt("cinemaDelay", it) }
+            s.theme?.let { e.putString("theme", it) }
+            s.movingClock?.let { e.putBoolean("movingClock", it) }
+            s.customArt?.let { e.putBoolean("customArt", it) }
             s.cinemaClock?.let { e.putBoolean("cinemaClock", it) }
             s.nightEnabled?.let { e.putBoolean("night", it) }
             s.nightStart?.let { e.putInt("nightStart", it) }
@@ -214,6 +229,7 @@ object Effects {
     fun load(p: Prefs) {
         reduceTransparency = p.reduceTransparency
         reduceMotion = p.reduceMotion
+        Themes.current = Themes.get(p.theme)
     }
 
     /** An animation's duration, or 0 under reduce motion. */

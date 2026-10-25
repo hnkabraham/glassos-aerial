@@ -1,3 +1,57 @@
+# GlassOS Aerial 1.5.0-aerial.1 validation
+
+Validated on October 24, 2026. Package `io.github.abhishekkaisar.glassos.aerial`, version code 8.
+
+## Automated checks
+
+**66 JVM tests and 36 Python tests passed.** Debug and signed optimized release builds passed; lint reported **0 errors, 115 warnings**. JavaScript syntax passed. New tests cover backwards-compatible appearance backups, strict theme/boolean validation, clock positions, feed shape/size limits, SDR preference and deduplication, unsafe URL/private-address rejection, interrupted-download cleanup, failed-feed preservation, icon filename traversal and health diffs.
+
+## Catalog, personalization and profiles
+
+The browser loaded the live Aerial Community feed (20 supported entries), searched for Bixby Creek Bridge, assigned Coastlines and downloaded/compressed the selected source. The source was shorter than the requested 90-second maximum: output was 54.87 seconds, silent H.264, with a poster; total 22,891,838 bytes. Verified sync copied the two new files and skipped all 40 existing videos/posters. There are now 21 clips on the tested stick. Third-party video files remain private and are not included in this repository or release.
+
+On Android TV API 31, remote Left/Right changed glass themes immediately; the custom-art switch preserved original icons. The browser file picker imported a neutral PNG, and manager sync updated real fixture app tiles without restarting GlassOS. A damaged PNG fell back to the app's original resources; Restore original removed only the chosen manager-owned image. A fresh settings export included the theme, custom-art switch and clock movement. JVM checks verify these preferences round-trip and older backups leave them unspecified.
+
+Cinema mode was allowed to enter naturally. On a real minute tick, the clock moved from bottom left (`[64,887][513,1032]`) to top left (`[64,48][513,193]`) within the 1920 × 1080 screen. The first OK woke Home without opening an app. These are discrete moves, not continuous animation or a burn-in guarantee.
+
+The physical device baseline recorded the old version, model/ABI/RAM, firmware, native Home handler, privacy values and blocker identity. After the upgrade, the comparison correctly reported only the GlassOS version change; free storage was reported separately. The baseline remains the pre-upgrade state. No firmware, root, Home-route, privacy or permission changes were applied.
+
+| Before: Classic glass | After: Forest palette |
+| --- | --- |
+| ![Classic glass home](validation/appearance-before.png) | ![Forest theme setting](validation/appearance-forest.png) |
+
+![Custom image on a neutral fixture app](validation/appearance-custom-art.png)
+
+| Cinema clock before minute tick | After minute tick |
+| --- | --- |
+| ![Clock at bottom left](validation/cinema-moving-before.png) | ![Clock at top left](validation/cinema-moving-after.png) |
+
+![Manager personalization with neutral test data](validation/manager-appearance.jpg)
+
+## Physical Fire TV lifecycle and upgrade
+
+Fire TV Stick 4K Max (2nd generation, AFTKRT), Fire OS 8.1.8.5 / RS8185.3891N. The manager saved the previous APK and a fresh settings backup, verified the certificate and target APK hash, and installed with `adb install -r`. A fresh post-upgrade backup matched the original layout, folders, scenery and existing display values exactly. Only the new default appearance fields were added. All five recorded privacy values remained off, four tracked packages remained disabled and the three Instagram blockers still matched their saved APK hashes.
+
+**10 Home/Settings cycles and sleep/wake passed.** The media player was released while away and resumed on return; per-cycle app PSS ranged from 87,707 to 97,063 KB. These short samples do not establish overnight stability or account for all decoder/GPU memory.
+
+## Before/after performance on the same physical stick
+
+Five samples per release, five-second settling periods, the same existing 20-clip library and display preferences; the new clip was synced afterward. The initial run while the TV was dozing was discarded. The reusable [benchmark tool](../tools/benchmark_launchers.py) now refuses to measure a sleeping device. No Home routing or app data is changed.
+
+| Median | 1.4.0-aerial.1 | 1.5.0-aerial.1 |
+| --- | ---: | ---: |
+| Cold activity `TotalTime` | 446 ms | 449 ms |
+| Return from Settings `WaitTime` | 174 ms | 139 ms |
+| App PSS | 111,430 KB | 110,804 KB |
+
+These results show similar resource use in this short run, not a demonstrated speed improvement. `am start -W` reports Activity launch timing, not first usable video frame. Shared video decoder allocations can be attributed outside the app. Device state, caches and different selected clips introduce noise.
+
+## Limits
+
+Other physical models, Fire OS 5/6/7, reboot persistence and a fresh privileged Home setup were not retested. Custom imagery and malicious-file cases used the emulator, not personal apps or files. Feed providers can change URLs or remove media. The manager's profile checks recorded configuration rather than network traffic. The current signing key and compiled empty TMDB key are retained.
+
+---
+
 # GlassOS Aerial 1.4.0-aerial.1 validation
 
 Validated on October 24, 2026. Package `io.github.abhishekkaisar.glassos.aerial`, version code 7.
