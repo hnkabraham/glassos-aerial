@@ -44,6 +44,26 @@ object Platform {
         ctx.packageManager.getApplicationInfo(pkg, 0).enabled
     } catch (e: Throwable) { false }
 
+    /** Home handlers and screensavers accumulate idle/setup time, not meaningful app viewing time. */
+    fun usageHelpers(ctx: Context): Set<String> {
+        val out = HashSet<String>()
+        out.add(ctx.packageName)
+        out.addAll(ANDROID_TV_HOMES)
+        if (isFireTv(ctx)) {
+            out.add(FIRE_HOME)
+            // Fire OS's dream service delegates to this separately launchable Ambient Experience activity.
+            out.add("com.amazon.tv.ftvambient")
+        }
+        val pm = ctx.packageManager
+        try { pm.queryIntentActivities(homeIntent(), 0).forEach { out.add(it.activityInfo.packageName) } }
+        catch (e: RuntimeException) { }
+        try {
+            pm.queryIntentServices(Intent(android.service.dreams.DreamService.SERVICE_INTERFACE), 0)
+                .forEach { out.add(it.serviceInfo.packageName) }
+        } catch (e: RuntimeException) { }
+        return out
+    }
+
     private fun homeIntent() = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
 
     /** The package the system opens for Home, or null when it would ask (no default chosen yet). */

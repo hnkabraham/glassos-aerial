@@ -16,7 +16,7 @@ object Grants {
     private fun pkg(ctx: Context) = ctx.packageName
 
     val ALL = listOf(
-        Grant("Usage access", "Comes back after the Home button", { HomeWatcher.hasAccess(it) }) { c ->
+        Grant("Usage access", "Home button and most-used app order", { HomeWatcher.hasAccess(it) }) { c ->
             listOf("appops set ${pkg(c)} GET_USAGE_STATS allow")
         },
         Grant("Display over other apps", "Shows the home at once after Home", { canDrawOverlays(it) }) { c ->

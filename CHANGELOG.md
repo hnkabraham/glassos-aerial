@@ -1,5 +1,15 @@
 # Changelog
 
+## GlassOS Aerial 1.2.0-aerial.1 (fork, 2026-10-24)
+
+- **Most-used app order:** optional sorting of the top row, drawer and folder contents by foreground time from roughly the last 30 days. Folders use the combined time of their visible members. Ties keep the manual order.
+- Home handlers, screensavers and Fire TV Ambient Experience are excluded from usage scoring so idle/setup time does not displace viewing apps. They remain available in the app list.
+- **Manual layout preserved:** switching back restores it. Folder/hide actions remain available while automatic sorting is on; manual editing explicitly switches modes.
+- Refreshes on returning Home, off the UI thread. Results that arrive after navigation begins wait for the next return. No extra background service or polling.
+- Uses the existing Usage access permission, independently of Amazon privacy opt-outs. Missing permission/history falls back to manual order. Usage history is never saved, logged, uploaded or exported; only the sort preference travels in backups.
+- App tiles now expose their labels to accessibility services as positions change.
+- Added ranking and backup compatibility checks; 57 JVM tests pass.
+
 ## GlassOS Aerial 1.1.0-aerial.1 (fork, 2026-10-24)
 
 GlassOS Aerial is a fork of GlassOS (package `io.github.abhishekkaisar.glassos.aerial`, version code 4). Entries

@@ -35,6 +35,13 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
     private val shelfRow = RowView(context, "Top Shelf")
     private val keyRow = RowView(context, "TMDB API key")
     private val appsRow = RowView(context, "Top row apps")
+    private val sortRow = RowView(context, "App order")
+    private val sortHint = TextView(context).apply {
+        textSize = 14f
+        typeface = Fonts.medium
+        setTextColor(0x99FFFFFF.toInt())
+        setPadding(dpi(20f), 0, dpi(20f), dpi(10f))
+    }
     private val hiddenRow = RowView(context, "Hidden apps")
     private val permsRow = RowView(context, "Permissions")
     private val setupRow = RowView(context, "Run setup again")
@@ -134,6 +141,8 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         for (r in listOf(sceneryRow, shuffleRow, favOnlyRow, labelsRow, cinemaRow, clockRow, nightRow, nightStartRow,
                 nightEndRow, nightLevelRow, transparencyRow, motionRow)) list.addView(r, rowLp())
         list.addView(section("Apps"))
+        list.addView(sortRow, rowLp())
+        list.addView(sortHint)
         list.addView(editRow, rowLp())
         list.addView(appsRow, rowLp())
         list.addView(hiddenRow, rowLp())
@@ -155,7 +164,8 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         photoRow.onClick = { step(photoRow, SetupView.Step.PHOTO) }
         countryRow.onClick = { step(countryRow, SetupView.Step.COUNTRY) }
         keyRow.onClick = { step(keyRow, SetupView.Step.TMDB_KEY) }
-        appsRow.onClick = { step(appsRow, SetupView.Step.APPS) }
+        appsRow.onClick = { act.editManualLayout { step(appsRow, SetupView.Step.APPS) } }
+        sortRow.onClick = { act.chooseAppOrder() }
         hiddenRow.onClick = { step(hiddenRow, SetupView.Step.HIDDEN) }
         permsRow.onClick = { step(permsRow, SetupView.Step.PERMISSIONS) }
         homeAppRow.onClick = { step(homeAppRow, SetupView.Step.HOME) }
@@ -235,6 +245,8 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
 
     private fun updateValues() {
         val p = act.prefs
+        sortRow.valueView.text = if (p.mostUsed) "Most used" else "Manual"
+        sortHint.text = act.usageOrderDescription
         shuffleRow.valueView.text = onOff(p.sceneShuffle)
         favOnlyRow.valueView.text = onOff(p.sceneFavoritesOnly)
         labelsRow.valueView.text = onOff(p.sceneLabels)

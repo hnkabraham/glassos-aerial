@@ -11,7 +11,7 @@ This records the device work behind [GlassOS Aerial](../README.md), performed on
 | Kernel | `5.10.43-android12-9-g8b4baa819147` |
 | Temporary-root tool | `ghostlock-karat-v1.0.4.zip` |
 | Home manager | Launcher Manager System User Edition, `LM_2.0.0.apk`, package `com.wolf.tn` |
-| Current launcher | GlassOS Aerial 1.1.0-aerial.1, package `io.github.abhishekkaisar.glassos.aerial` |
+| Current launcher | GlassOS Aerial 1.2.0-aerial.1, package `io.github.abhishekkaisar.glassos.aerial` |
 
 Original tool sources:
 
@@ -79,7 +79,7 @@ Check the native handler:
 adb -s "$TV" shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME
 ```
 
-Our expected result is `com.wolf.tn/.ui.LMUHandler`. Check the selected launcher in Launcher Manager too; the resolver alone does not prove it selected Aerial. Then open another app, press Home, and check that Aerial opens. Fire TV Settings must also remain accessible. Reboot verification applies to the original device setup and earlier Aerial build; the 1.1.0 upgrade was checked without another reboot.
+Our expected result is `com.wolf.tn/.ui.LMUHandler`. Check the selected launcher in Launcher Manager too; the resolver alone does not prove it selected Aerial. Then open another app, press Home, and check that Aerial opens. Fire TV Settings must also remain accessible. Reboot verification applies to the original device setup and earlier Aerial build; the 1.1.0 and 1.2.0 upgrades were checked without another reboot.
 
 **For another stick already using this Home handler:** open Launcher Manager and select GlassOS Aerial. Routine upgrades use `adb install -r` with the same signing key. Repeating the root exploit is unnecessary for those upgrades.
 

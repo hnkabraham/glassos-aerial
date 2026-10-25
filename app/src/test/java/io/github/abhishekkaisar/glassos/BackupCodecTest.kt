@@ -17,7 +17,7 @@ class BackupCodecTest {
         hidden = listOf("com.amazon.weather"),
         folders = folders,
         display = DisplayBackup(sound = false, topShelf = "aerial", scene = "scene:ocean", cinemaDelaySec = 120, cinemaClock = true,
-            nightEnabled = true, nightStart = 22 * 60, nightEnd = 7 * 60, nightLevel = 2, reduceTransparency = true, reduceMotion = false),
+            nightEnabled = true, nightStart = 22 * 60, nightEnd = 7 * 60, nightLevel = 2, reduceTransparency = true, reduceMotion = false, mostUsed = true),
         scenery = SceneryBackup(shuffle = true, favoritesOnly = false, labels = true,
             favorites = listOf("01 - Golden Gate, San Francisco.mp4"), hidden = listOf("09-night.mov")))
 
@@ -46,11 +46,22 @@ class BackupCodecTest {
     @Test fun neverExportsPrivateOrDeviceSettings() {
         val text = BackupCodec.encode(full, "x", 0L)
         for (k in listOf("tmdbKey", "country", "setupDone", "askedStorage", "replaceHome", "sleepAt",
-                "position", "clip\"", "file:", "/storage", "/sdcard", "password", "serial")) {
+                "position", "clip\"", "file:", "/storage", "/sdcard", "password", "serial", "foregroundMillis", "usageHistory")) {
             assertFalse("must not contain $k", text.contains(k))
         }
         val o = JSONObject(text)
         assertEquals(setOf("format", "version", "app", "exportedAt", "layout", "folders", "display", "scenery"), o.keySet())
+    }
+
+    @Test fun olderBackupsLeaveAppOrderUnspecified() {
+        val d = ok(doc { getJSONObject("display").remove("mostUsed") })
+        assertEquals(null, d.display!!.mostUsed)
+    }
+
+    @Test fun automaticOrderPreferenceIsStrictlyBoolean() {
+        rejects(doc { getJSONObject("display").put("mostUsed", "yes") }, "display.mostUsed", "true or false")
+        val d = ok(doc { getJSONObject("display").put("mostUsed", false) })
+        assertEquals(false, d.display!!.mostUsed)
     }
 
     @Test fun exportDropsWhatImportWouldRefuse() {
