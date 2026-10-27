@@ -34,6 +34,7 @@ class MainActivity : Activity(), HomeHost {
         // The theme's night colour stays for the starting window; once the content is up the hero covers it.
         window.setBackgroundDrawable(null)
         HomeWatcher.sync(this)
+        AppLockGuard.sync(this)
         if (!home.prefs.setupDone) home.root.post { home.openSetup() }
         else home.root.post { managerAction(intent) }
         registerReceiver(timeReceiver, IntentFilter().apply {
@@ -66,6 +67,9 @@ class MainActivity : Activity(), HomeHost {
         HomeOverlay.discardSpare()
         home.onResumed()
         HomeWatcher.sync(this)
+        AppLockGuard.sync(this)
+        // Screen Mirroring is on but this process knows of no receiver (it started after the receiver died): start it.
+        ScreenMirroring.sync(this, home.prefs, "home")
         takeOverFromOverlay()
     }
 

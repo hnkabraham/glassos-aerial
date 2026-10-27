@@ -1,5 +1,6 @@
 package io.github.abhishekkaisar.glassos
 
+import io.github.abhishekkaisar.glassos.airplay.AirPlayConfig
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -20,6 +21,10 @@ data class DisplayBackup(
     val nightStart: Int? = null,
     val nightEnd: Int? = null,
     val nightLevel: Int? = null,
+    /** Night follows sunset and sunrise; [nightStart] and [nightEnd] stay the clock-time fallback. */
+    val nightSun: Boolean? = null,
+    val nightStartOffset: Int? = null,
+    val nightEndOffset: Int? = null,
     val reduceTransparency: Boolean? = null,
     val reduceMotion: Boolean? = null,
     val mostUsed: Boolean? = null,
@@ -38,9 +43,24 @@ data class SceneryBackup(
 )
 
 /**
- * Everything a backup may hold: a whitelist of layout and look preferences. Never credentials (TMDB key), the
- * user's name or country, setup and permission state, home routing, the sleep timer, playback positions or anything
- * about the device. A null section was missing and leaves the current settings alone.
+ * Settings > Screen Mirroring: whether it is on and its four basic settings. Never the receiver's pairing identity
+ * (files/airplay.pem), its private "airplay" prefs or the advanced settings GlassOS Manager sets.
+ */
+data class MirroringBackup(
+    val on: Boolean? = null,
+    /** The name senders show; empty: the TV's own name. */
+    val name: String? = null,
+    val pin: Boolean? = null,
+    /** [AirPlayConfig.RES_AUTO], [AirPlayConfig.RES_1080] or [AirPlayConfig.RES_720]. */
+    val resolution: String? = null,
+    val syncVolume: Boolean? = null
+)
+
+/**
+ * Everything a backup may hold: a whitelist of layout and look preferences, and Screen Mirroring's basic settings.
+ * Never credentials (TMDB key), the user's name or country, setup and permission state, home routing, the sleep
+ * timer, playback positions or anything about the device (a Screen Mirroring name only when the user chose one).
+ * A null section was missing and leaves the current settings alone.
  */
 data class BackupData(
     /** Top row ids (packages and folder ids); null: not saved (the default top row). */
@@ -51,6 +71,7 @@ data class BackupData(
     val folders: List<AppFolder>? = null,
     val display: DisplayBackup? = null,
     val scenery: SceneryBackup? = null,
+    val mirroring: MirroringBackup? = null,
     /** The backup had a layout section: its top row, order and hidden apps replace the current ones as a whole. */
     val hasLayout: Boolean = dock != null || order != null || hidden != null
 ) {
@@ -63,7 +84,26 @@ data class BackupData(
         scenery?.favorites?.let { parts.add(plural(it.size, "favourite scene")) }
         scenery?.hidden?.let { parts.add(plural(it.size, "hidden scene")) }
         if (display != null) parts.add("display settings")
+        if (mirroring != null) parts.add("Screen Mirroring settings")
         return parts.joinToString(", ").ifEmpty { "no settings" }
+    }
+
+    /**
+     * The backup as this TV restores it: where Screen Mirroring is not available ([mirroring] false) its section is
+     * left out, so the confirmation does not name it and nothing of it is written.
+     */
+    fun forThisTv(mirroring: Boolean): BackupData = if (mirroring || this.mirroring == null) this else copy(mirroring = null)
+
+    /**
+     * One line for the import confirmation when restoring turns Screen Mirroring on while it is off ([on] false): the
+     * TV then takes senders from its network, with or without a code ([pin]: Require PIN now, for a backup without
+     * it). Null when restoring leaves it off or it is already on.
+     */
+    fun mirroringWarning(on: Boolean, pin: Boolean): String? {
+        val m = mirroring ?: return null
+        if (m.on != true || on) return null
+        return if (m.pin ?: pin) "Turns Screen Mirroring on: devices on your network can mirror to this TV with the code it shows."
+        else "Turns Screen Mirroring on: any device on your network can mirror to this TV, with no code (Require PIN is off)."
     }
 
     private fun plural(n: Int, w: String) = if (n == 1) "1 $w" else "$n ${w}s"
@@ -123,7 +163,11 @@ object BackupCodec {
             s.nightStart?.let { n.put("start", it) }
             s.nightEnd?.let { n.put("end", it) }
             s.nightLevel?.let { n.put("level", it) }
-            j.put("night", n)
+            s.nightSun?.let { n.put("sun", it) }
+            s.nightStartOffset?.let { n.put("startOffset", it) }
+            s.nightEndOffset?.let { n.put("endOffset", it) }
+            // Decoding treats a night section as a whole (no "sun" means clock times), so none is written without fields.
+            if (n.length() > 0) j.put("night", n)
             s.reduceTransparency?.let { j.put("reduceTransparency", it) }
             s.reduceMotion?.let { j.put("reduceMotion", it) }
             s.mostUsed?.let { j.put("mostUsed", it) }
@@ -138,6 +182,15 @@ object BackupCodec {
             s.favorites?.let { j.put("favorites", JSONArray(it.filter { n -> SceneNames.isValidId(n) }.distinct().take(MAX_LIST))) }
             s.hidden?.let { j.put("hidden", JSONArray(it.filter { n -> SceneNames.isValidId(n) }.distinct().take(MAX_LIST))) }
             o.put("scenery", j)
+        }
+        d.mirroring?.let { m ->
+            val j = JSONObject()
+            m.on?.let { j.put("on", it) }
+            m.name?.takeIf { AirPlayConfig.NAME.valid(it) }?.let { j.put("name", it) }
+            m.pin?.let { j.put("pin", it) }
+            m.resolution?.takeIf { AirPlayConfig.RES.valid(it) }?.let { j.put("resolution", it) }
+            m.syncVolume?.let { j.put("syncVolume", it) }
+            o.put("screenMirroring", j)
         }
         return o.toString(2)
     }
@@ -188,7 +241,7 @@ object BackupCodec {
                 members[id]?.let { fail("$name[$i]: $id is in the folder \"$it\" and cannot also be listed on its own.") }
             }
         }
-        BackupResult.Ok(BackupData(dock, order, hidden, folders, display(o), scenery(o), hasLayout = layout != null), exportedAt)
+        BackupResult.Ok(BackupData(dock, order, hidden, folders, display(o), scenery(o), mirroring(o), hasLayout = layout != null), exportedAt)
     } catch (e: Invalid) {
         BackupResult.Error(e.message ?: "The backup is not valid.")
     } catch (e: Exception) {
@@ -234,12 +287,20 @@ object BackupCodec {
         val level = n?.let { int(it, "level", "display.night.level") }
         for ((k, v) in listOf("start" to start, "end" to end)) if (v != null && v !in 0 until NightSchedule.DAY) fail("display.night.$k must be minutes of the day (0 to 1439).")
         if (level != null && level !in 0 until NIGHT_LEVELS) fail("display.night.level must be 0, 1 or 2.")
+        // Night travels as one: a backup from before sun mode (no "sun") restores clock times, not the current mode.
+        val sun = n?.let { bool(it, "sun", "display.night.sun") ?: false }
+        val startOffset = n?.let { int(it, "startOffset", "display.night.startOffset") }
+        val endOffset = n?.let { int(it, "endOffset", "display.night.endOffset") }
+        val maxOffset = NightSchedule.MAX_OFFSET
+        for ((k, v) in listOf("startOffset" to startOffset, "endOffset" to endOffset)) if (v != null && v !in -maxOffset..maxOffset)
+            fail("display.night.$k must be minutes from -$maxOffset to $maxOffset.")
         val theme = str(d, "theme", "display.theme")
         if (theme != null && theme !in Themes.ids) fail("Unknown glass theme.")
         return DisplayBackup(
             sound = bool(d, "sound", "display.sound"), topShelf = shelf, scene = scene, cinemaDelaySec = delay,
             cinemaClock = bool(d, "cinemaClock", "display.cinemaClock"),
             nightEnabled = n?.let { bool(it, "enabled", "display.night.enabled") }, nightStart = start, nightEnd = end, nightLevel = level,
+            nightSun = sun, nightStartOffset = startOffset, nightEndOffset = endOffset,
             reduceTransparency = bool(d, "reduceTransparency", "display.reduceTransparency"),
             reduceMotion = bool(d, "reduceMotion", "display.reduceMotion"),
             mostUsed = bool(d, "mostUsed", "display.mostUsed"), theme = theme,
@@ -257,6 +318,18 @@ object BackupCodec {
             labels = bool(s, "labels", "scenery.labels"),
             favorites = list(s, "favorites", "scenery.favorites", MAX_LIST, check)?.distinct(),
             hidden = list(s, "hidden", "scenery.hidden", MAX_LIST, check)?.distinct())
+    }
+
+    private fun mirroring(o: JSONObject): MirroringBackup? {
+        val m = obj(o, "screenMirroring") ?: return null
+        val name = str(m, "name", "screenMirroring.name")
+        if (name != null && !AirPlayConfig.NAME.valid(name)) fail("screenMirroring.name must be one line of at most " +
+            "${AirPlayConfig.MAX_NAME_BYTES} bytes, without spaces at either end.")
+        val res = str(m, "resolution", "screenMirroring.resolution")
+        if (res != null && !AirPlayConfig.RES.valid(res)) fail("screenMirroring.resolution must be one of " +
+            "${AirPlayConfig.RES.choices.joinToString(", ")}.")
+        return MirroringBackup(on = bool(m, "on", "screenMirroring.on"), name = name, pin = bool(m, "pin", "screenMirroring.pin"),
+            resolution = res, syncVolume = bool(m, "syncVolume", "screenMirroring.syncVolume"))
     }
 
     // ---------- Typed reads (opt + type checks, identical on Android's and the reference org.json) ----------

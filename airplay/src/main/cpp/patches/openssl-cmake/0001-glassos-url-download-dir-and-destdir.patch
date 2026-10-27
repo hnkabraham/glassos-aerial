@@ -1,0 +1,38 @@
+diff --git a/cmake/BuildOpenSSL.cmake b/cmake/BuildOpenSSL.cmake
+index 8091a72..f534e80 100644
+--- a/cmake/BuildOpenSSL.cmake
++++ b/cmake/BuildOpenSSL.cmake
+@@ -177,9 +177,20 @@ else()
+     # build OPENSSL_PATCH_COMMAND
+     include(PatchOpenSSL)
+ 
++    # GlassOS Aerial: the tarball URL and the download directory can be set by the including project
++    # (AIRPLAY_OPENSSL_URL, AIRPLAY_DOWNLOAD_DIR). With URL_HASH set, a matching tarball already in the download
++    # directory is reused without network access, so CI can cache that directory.
++    if (NOT AIRPLAY_OPENSSL_URL)
++        set(AIRPLAY_OPENSSL_URL https://mirror.viaduck.org/openssl/openssl-${OPENSSL_BUILD_VERSION}.tar.gz)
++    endif()
++    if (AIRPLAY_DOWNLOAD_DIR)
++        set(OPENSSL_DOWNLOAD_DIR DOWNLOAD_DIR ${AIRPLAY_DOWNLOAD_DIR})
++    endif()
++
+     # add openssl target
+     ExternalProject_Add(openssl
+-        URL https://mirror.viaduck.org/openssl/openssl-${OPENSSL_BUILD_VERSION}.tar.gz
++        URL ${AIRPLAY_OPENSSL_URL}
++        ${OPENSSL_DOWNLOAD_DIR}
+         ${OPENSSL_CHECK_HASH}
+         UPDATE_COMMAND ""
+ 
+@@ -192,8 +203,10 @@ else()
+         TEST_BEFORE_INSTALL 1
+         TEST_COMMAND ${COMMAND_TEST}
+ 
++        # GlassOS Aerial: building_env.py joins its arguments into a shell command line, so DESTDIR is quoted for a
++        # build directory whose path contains spaces (OpenSSL's Makefile quotes $(DESTDIR) itself).
+         INSTALL_COMMAND ${BUILD_ENV_TOOL} <SOURCE_DIR> -- ${PERL_PATH_FIX_INSTALL}
+-        COMMAND ${BUILD_ENV_TOOL} <SOURCE_DIR> -- ${MAKE_PROGRAM} DESTDIR=${OPENSSL_PREFIX} install_sw ${INSTALL_OPENSSL_MAN}
++        COMMAND ${BUILD_ENV_TOOL} <SOURCE_DIR> -- ${MAKE_PROGRAM} "DESTDIR='${OPENSSL_PREFIX}'" install_sw ${INSTALL_OPENSSL_MAN}
+         COMMAND ${CMAKE_COMMAND} -G ${CMAKE_GENERATOR} ${CMAKE_BINARY_DIR}                    # force CMake-reload
+ 
+         LOG_INSTALL 1

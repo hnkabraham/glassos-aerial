@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Screen Mirroring receiver. The app already holds INTERNET, ACCESS_WIFI_STATE, ACCESS_NETWORK_STATE and
+         FOREGROUND_SERVICE; these are listed so the library states everything it needs. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Held only while a sender is connected. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- mDNS (DNS-SD) advertising while the receiver runs. -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+
+    <application>
+        <!-- Alone in the :airplay process with all native code: a native crash never takes the launcher down. Not
+             exported: only GlassOS starts and binds it (START by Intent, everything else over a Messenger). -->
+        <service
+            android:name=".service.AirPlayService"
+            android:exported="false"
+            android:process=":airplay" />
+
+        <!-- The receiver screen (mirrored picture, PIN, track, state), next to the receiver in :airplay. Only the
+             receiver starts it. Its own task, never in recents: Back returns to whatever was there. -->
+        <activity
+            android:name=".ui.AirPlayActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:process=":airplay"
+            android:screenOrientation="landscape"
+            android:taskAffinity="io.github.abhishekkaisar.glassos.airplay"
+            android:theme="@style/AirPlayFullscreen"
+            tools:ignore="DiscouragedApi" />
+    </application>
+</manifest>

@@ -15,13 +15,15 @@ object Grants {
 
     private fun pkg(ctx: Context) = ctx.packageName
 
+    private val overlay = Grant("Display over other apps", "Shows the home at once after Home, and the app lock's code", { canDrawOverlays(it) }) { c ->
+        listOf("appops set ${pkg(c)} SYSTEM_ALERT_WINDOW allow")
+    }
+
     val ALL = listOf(
-        Grant("Usage access", "Home button and most-used app order", { HomeWatcher.hasAccess(it) }) { c ->
+        Grant("Usage access", "Home button, most-used app order and app lock", { HomeWatcher.hasAccess(it) }) { c ->
             listOf("appops set ${pkg(c)} GET_USAGE_STATS allow")
         },
-        Grant("Display over other apps", "Shows the home at once after Home", { canDrawOverlays(it) }) { c ->
-            listOf("appops set ${pkg(c)} SYSTEM_ALERT_WINDOW allow")
-        },
+        overlay,
         // API 26+ (Fire OS 7 and 8) keeps the listener list itself and ignores writes to the secure setting, so it
         // needs `cmd notification allow_listener`. Older versions read the setting, which is appended to, never
         // replaced, so other listeners stay enabled.
@@ -34,6 +36,13 @@ object Grants {
                 "pm grant ${pkg(c)} ${Manifest.permission.WRITE_EXTERNAL_STORAGE}")
         }
     )
+
+    /**
+     * What [g] is for on this TV. Where Screen Mirroring needs Display over other apps to come up over another app
+     * (Android 10 and later), it says so, in fewer words so the title keeps one line.
+     */
+    fun why(ctx: Context, g: Grant): String =
+        if (g === overlay && Build.VERSION.SDK_INT >= 29 && ScreenMirroring.available(ctx)) "Home at once, app lock, Screen Mirroring" else g.why
 
     fun canDrawOverlays(ctx: Context) = Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(ctx)
 
@@ -70,6 +79,7 @@ object Grants {
         // Grants land asynchronously on some builds; give them a moment.
         Thread.sleep(400)
         HomeWatcher.sync(ctx)
+        AppLockGuard.sync(ctx)
         return Result(ALL.associateWith { it.isGranted(ctx) }, log.toString())
     }
 

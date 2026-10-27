@@ -61,6 +61,45 @@ object SceneSession {
     /** The last clip whose name was shown, so returning to Home does not show it again. */
     var labeled: String? = null
     private var loaded = false
+    private val claims = SceneClaims()
+    /**
+     * Who alone may play while it holds this; null: whichever view can, as before. Main thread. The screensaver's
+     * view claims it ([claim]) and always yields it when it stops, is released or leaves its window. Screen
+     * Mirroring holds it ([hold]) while its receiver decodes video in another process: then no view plays, the
+     * screensaver included, until it yields.
+     */
+    val owner: Any? get() = claims.owner
+    /** Every player view in the process (held weakly), so a claim or a yield reaches the others. */
+    private val views = java.util.Collections.newSetFromMap(java.util.WeakHashMap<AerialVideoView, Boolean>())
+
+    fun add(view: AerialVideoView) { views.add(view) }
+    fun remove(view: AerialVideoView) { views.remove(view) }
+
+    /**
+     * [view] alone may play from now on (unless something holds the decoder). A view playing elsewhere (the home)
+     * closes its player at once, keeping the playhead, so two decoders never overlap. Only the screensaver claims; the
+     * home only respects the owner.
+     */
+    fun claim(view: AerialVideoView) {
+        if (claims.claim(view, outside = false)) changed(view)
+    }
+
+    /**
+     * A decoder outside the scenery views ([by], Screen Mirroring's receiver) needs the hardware: every view closes its
+     * player at once, keeping the playhead, and none opens one until [by] yields.
+     */
+    fun hold(by: Any) {
+        if (claims.claim(by, outside = true)) changed(by)
+    }
+
+    /** [by] lets go of the decoder, if it held it: the screensaver's view, or a home in front, plays again. */
+    fun yield(by: Any) {
+        if (claims.yield(by)) changed(by)
+    }
+
+    private fun changed(by: Any) {
+        for (v in views.toList()) if (v !== by) v.ownerChanged()
+    }
 
     fun load(ctx: Context) {
         if (loaded) return
@@ -80,13 +119,11 @@ object SceneSession {
     }
 }
 
-/** What may play: the library and the user's scene choices. */
-class SceneChoice(val favorites: Set<String>, val hidden: Set<String>, val favoritesOnly: Boolean, val shuffle: Boolean, val collection: String = "all")
-
 /**
  * A silent video layer behind the app grid. Uses the platform decoder, with no audio focus or media session.
- * Only a visible, focused home owns a player. Leaving Home releases the decoder and saves the playhead;
- * returning recreates it at that position, freeing hardware resources for Netflix and other video apps.
+ * Only a visible, focused home owns a player, or the screensaver, which claims it ([SceneSession.claim]). Leaving
+ * Home releases the decoder and saves the playhead; returning recreates it at that position, freeing hardware
+ * resources for Netflix and other video apps.
  * The existing HeroView shows a still while preparing and supplies a cached blur to the glass surfaces.
  * Nothing here keeps the screen on: the TV's own screensaver and sleep settings apply as usual.
  */
@@ -95,6 +132,8 @@ class AerialVideoView(ctx: Context) : TextureView(ctx), TextureView.SurfaceTextu
     var onClipChanged: ((AerialClip) -> Unit)? = null
     /** Nothing can play any more (every eligible clip failed to decode). */
     var onUnavailable: (() -> Unit)? = null
+    /** Another view claimed or let go of the decoder (the screensaver). */
+    var onOwnerChanged: (() -> Unit)? = null
     private var clips: Map<String, AerialClip> = emptyMap()
     private var ids: List<String> = emptyList()
     private var choice = SceneChoice(emptySet(), emptySet(), false, false)
@@ -134,6 +173,7 @@ class AerialVideoView(ctx: Context) : TextureView(ctx), TextureView.SurfaceTextu
         isClickable = false
         alpha = 0f
         visibility = View.GONE
+        SceneSession.add(this)
     }
 
     /** The clip playing or about to play, if the aerial source is on. */
@@ -218,7 +258,14 @@ class AerialVideoView(ctx: Context) : TextureView(ctx), TextureView.SurfaceTextu
     }
 
     private fun canPlay() = !released && enabled && running && isAttachedToWindow && isAvailable &&
-        windowVisibility == View.VISIBLE && hasWindowFocus() && playlist.current?.let { it !in SceneSession.failed } == true
+        windowVisibility == View.VISIBLE && hasWindowFocus() && (SceneSession.owner == null || SceneSession.owner === this) &&
+        playlist.current?.let { it !in SceneSession.failed } == true
+
+    /** Another view claimed or let go of the decoder ([SceneSession.claim]): close or open the player to match. */
+    fun ownerChanged() {
+        sync()
+        onOwnerChanged?.invoke()
+    }
 
     private fun sync() {
         if (canPlay()) {
@@ -344,6 +391,7 @@ class AerialVideoView(ctx: Context) : TextureView(ctx), TextureView.SurfaceTextu
     override fun onDetachedFromWindow() {
         main.removeCallbacks(advance)
         closePlayer()
+        SceneSession.yield(this)
         super.onDetachedFromWindow()
     }
 
@@ -353,6 +401,8 @@ class AerialVideoView(ctx: Context) : TextureView(ctx), TextureView.SurfaceTextu
         closePlayer()
         surface?.release()
         surface = null
+        SceneSession.remove(this)
+        SceneSession.yield(this)
     }
 
     companion object { private const val TAG = "GlassAerial" }

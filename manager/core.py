@@ -3,6 +3,7 @@
 from __future__ import annotations
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -16,9 +17,33 @@ import uuid
 
 import catalog
 import profiles
+import sun
 
 PACKAGE = "io.github.abhishekkaisar.glassos.aerial"
 ACTIVITY = PACKAGE + "/io.github.abhishekkaisar.glassos.MainActivity"
+# GlassOS's ADB-only controls (ManagerProvider.kt, GlassOS 1.6.0 and later), reached with `content call`.
+PROVIDER = "content://" + PACKAGE + ".manager"
+UPDATE_GLASSOS = "Update GlassOS to 1.6.0 or later on this TV."
+NO_ANSWER = "GlassOS on this TV did not answer. Try again; if it keeps failing, update GlassOS to 1.6.0 or later."
+# A call that ran out of time: a slow or busy TV, not an outdated GlassOS.
+TV_SLOW = "The TV took too long to answer; it may be busy. Wait a moment, then try again."
+# GlassOS's screensaver (AerialDream.kt, GlassOS 1.6.0 and later), as the TV's screensaver setting names it.
+DREAM = PACKAGE + "/io.github.abhishekkaisar.glassos.AerialDream"
+LAUNCHER_MANAGER = "com.wolf.tn"
+# The TV settings a screensaver depends on: (namespace, key, kind). The first three, and the two the user may opt into
+# (Amazon's Ambient Experience, Stay awake), are the only ones ever written; the timeouts are read for the report.
+SCREENSAVER = [
+    ("secure", "screensaver_components", "components"),
+    ("secure", "screensaver_enabled", "int"),
+    ("secure", "screensaver_activate_on_sleep", "int"),
+    ("secure", "screensaver_activate_on_dock", "int"),
+    ("secure", "screensaver_default_component", "components"),
+    ("secure", "amazon_ambient_enabled", "int"),
+    ("secure", "sleep_timeout", "int"),
+    ("system", "screen_off_timeout", "int"),
+    ("global", "stay_on_while_plugged_in", "int"),
+]
+COMPONENT = r"[A-Za-z0-9._]+/[A-Za-z0-9._$]+"
 REMOTE = "/sdcard/Movies/GlassAerial"
 DOCUMENTS = "/sdcard/Documents/GlassOS-Aerial"
 CERT = "235c4b2e2dc61d035bbcde530ab3ac94c8a2f653ffa9607ea9e87d379d8d0441"
@@ -99,21 +124,223 @@ def name(value):
     return value
 
 
-def schedule(value):
+def lock_code(value):
+    """An app lock code: 4 remote buttons as the TV stores them (LockCode.LETTERS in AppLock.kt).
+    U D L R are the arrows, W Rewind, P Play/Pause, F Fast forward. The message never repeats the input."""
+    code = value.strip().upper() if isinstance(value, str) else ""
+    if not re.fullmatch(r"[UDLRWPF]{4}", code):
+        raise Error("A lock code is 4 remote buttons: ↑ ↓ ← → ⏪ ⏯ ⏩.")
+    return code
+
+
+LABEL_CHARS = set("0123456789 .,'-")
+
+
+def place_label(text):
+    """A place name with only letters, digits, spaces and . , ' - (others dropped) and its spaces collapsed."""
+    return " ".join("".join(c for c in text if c.isalpha() or c in LABEL_CHARS).split())
+
+
+def sun_location(value):
+    """The place sun times are worked out for, as the TV keeps it: {lat, lon, label} with the coordinates rounded to
+    0.1 degree (about 11 km), or None to go back to the TV's time-zone estimate. The name keeps letters, digits,
+    spaces and . , ' - (others are dropped), up to 40 characters."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise Error("Enter a latitude and a longitude.")
+    lat, lon, label = value.get("lat"), value.get("lon"), value.get("label", "")
+    for v, limit in ((lat, 90), (lon, 180)):
+        if type(v) not in (int, float) or not math.isfinite(v) or not -limit <= v <= limit:
+            raise Error("Enter a latitude from −90 to 90 and a longitude from −180 to 180.")
+    if label is None:
+        label = ""
+    if not isinstance(label, str):
+        raise Error("The place name must be text.")
+    label = place_label(label)
+    if len(label) > 40:
+        raise Error("Keep the place name to 40 characters.")
+    return {"lat": sun.tenth(lat), "lon": sun.tenth(lon), "label": label}
+
+
+def sun_arg(value):
+    """The --arg of `sun-location`: "lat,lon,label", or None (no --arg: `content` cannot send an empty one) to clear."""
+    if value is None:
+        return None
+    m = re.fullmatch(r"(-?\d{1,3}(?:\.\d)?),(-?\d{1,3}(?:\.\d)?),(.*)", value, re.S) if isinstance(value, str) else None
+    if not m:
+        raise Error("Enter a latitude from −90 to 90 and a longitude from −180 to 180.")
+    place = sun_location({"lat": float(m.group(1)), "lon": float(m.group(2)), "label": m.group(3)})
+    if place["label"] != m.group(3):
+        raise Error("The place name must be text.")
+    return f"{place['lat']:.1f},{place['lon']:.1f},{place['label']}"
+
+
+# Where this Mac's public internet address appears to be, asked only when the user chooses the lookup. The reply
+# carries the address itself; only the rounded place leaves ip_place().
+IP_LOOKUP = "https://ipinfo.io/json"
+IP_LOOKUP_LIMIT = 16 * 1024
+IP_LOOKUP_FAILED = "Couldn’t look up a place from this Mac’s internet address. Type the place instead."
+
+
+def ip_place(data):
+    """The place in an ipinfo.io reply, checked and rounded as sun_location() does: {lat, lon, label}, the name from
+    the city and region (else country), shortened to the city, then dropped, if it would not fit in 40 characters."""
+    if len(data) > IP_LOOKUP_LIMIT:
+        raise ValueError("Reply too large.")
+    doc = json.loads(data)
+    loc = doc.get("loc") if isinstance(doc, dict) else None
+    number = r"(-?[0-9]{1,3}(?:\.[0-9]{1,10})?)"  # ASCII digits only: \d would also take other scripts' digits
+    m = re.fullmatch(number + "," + number, loc) if isinstance(loc, str) else None
+    if not m:
+        raise ValueError("No coordinates in the reply.")
+    city, region, country = (
+        place_label(v) if isinstance(v, str) else "" for v in (doc.get("city"), doc.get("region"), doc.get("country"))
+    )
+    area = region if region and region != city else country
+    names = [", ".join(x for x in (city, area) if x), city, ""]
+    label = next(x for x in names if len(x) <= 40)
+    return sun_location({"lat": float(m.group(1)), "lon": float(m.group(2)), "label": label})
+
+
+# The provider methods this manager may call, each with the validator of its --arg (None: it takes none). A
+# validator that returns None sends no --arg.
+GLASS_METHODS = {
+    "status": None,
+    "lock-set-code": lock_code,
+    "lock-off": None,
+    "sun-location": sun_arg,
+    # Read only: Screen Mirroring's state. This manager never starts, stops or changes it.
+    "airplay-status": None,
+}
+GLASS_REPLY = re.compile(r"^Result: Bundle\[\{glass=(\{.*\})\}\]\s*$", re.M)
+GLASS_ERRORS = {
+    "denied": "The TV refused this request: only its ADB shell may use GlassOS's controls.",
+    "bad-code": "The TV refused that lock code; nothing changed.",
+    "not-saved": "GlassOS could not save the change on the TV; nothing changed.",
+    "unknown-method": "Update GlassOS on this TV to use this control.",
+    "unsupported": "Update GlassOS on this TV to use this control.",
+    "bad-location": "The TV refused that place; nothing changed.",
+}
+
+
+def glass_reply(out):
+    """The JSON object in `content call` output. `content` exits 0 even when it fails, so only GlassOS's own
+    one-key Bundle counts as an answer. Errors are fixed sentences: adb's output is never shown."""
+    found = GLASS_REPLY.findall(out)
+    # Looked for outside GlassOS's answer only: a place name the TV echoes back may contain these words.
+    rest = GLASS_REPLY.sub("", out)
+    if "Could not find provider" in rest or "Unknown authority" in rest:
+        raise Error(UPDATE_GLASSOS)
+    if "SecurityException" in rest:
+        raise Error("This TV does not let ADB reach GlassOS's controls.")
+    if "Error while accessing provider" in rest or len(found) != 1:
+        raise Error(NO_ANSWER)
+    try:
+        reply = json.loads(found[0])
+    except ValueError:
+        raise Error(NO_ANSWER) from None
+    if not isinstance(reply, dict) or type(reply.get("ok")) is not bool:
+        raise Error(NO_ANSWER)
+    if not reply["ok"]:
+        code = reply.get("error")
+        raise Error(
+            GLASS_ERRORS.get(code, "GlassOS could not do that on this TV.")
+            if isinstance(code, str)
+            else NO_ANSWER
+        )
+    return reply
+
+
+def mirroring_line(m):
+    """What a checked Screen Mirroring record says, as the TV's Settings say it (Off whatever the receiver last did)."""
+    if not m["on"]:
+        return "off"
+    if m["gave_up"] or m["error"] == "crashed":
+        return "stopped unexpectedly"
+    if m["state"] == "ERROR":
+        return "could not start"
+    if m["state"] != "RUNNING":
+        return "starting"
+    if m["pin_shown"]:
+        return "showing a code" if m["screen"] else "code requested (hidden on the TV)"
+    if m["mode"] in ("MIRROR", "VIDEO"):
+        return "mirroring"
+    if m["mode"] == "AUDIO":
+        return "playing music"
+    return f"ready as “{m['name']}”"
+
+
+def setting_value(kind, value):
+    """A screensaver setting as read from the TV, saved here or written back: "null" (not set), a whole number, or
+    (components) package/class names separated by commas. Anything else is refused before a single setting changes."""
+    if value == "null":
+        return value
+    if isinstance(value, str):
+        if kind == "components" and re.fullmatch(f"{COMPONENT}(?:,{COMPONENT})*", value):
+            return value
+        if kind == "int" and re.fullmatch(r"-?\d{1,10}", value) and -(2**31) <= int(value) < 2**31:
+            return value
+    raise Error("A screensaver setting on this TV has a value this manager does not recognize; nothing was changed.")
+
+
+def screensaver_options(value):
+    """What "Use GlassOS scenery" may also turn off, when it is on: {"ambient": bool, "stayAwake": bool}."""
+    if value is None:
+        value = {}
+    if (
+        not isinstance(value, dict)
+        or set(value) - {"ambient", "stayAwake"}
+        or any(type(v) is not bool for v in value.values())
+    ):
+        raise Error("Choose which settings to change.")
+    return {"ambient": value.get("ambient", False), "stayAwake": value.get("stayAwake", False)}
+
+
+def schedule(value, place=None, zone=None, on=None):
+    """The daily rhythm as scenery.json carries it (version 1). Rows are {start, collection} or {anchor: "sunrise" |
+    "sunset", offset, collection}. Every written row keeps a distinct `start`: GlassOS before 1.6.0 reads only that,
+    and the TV falls back to it on days without a sun time. A sun row's start is today's time for `place` (lat, lon)
+    in the TV's `zone`, or 06:00 / 18:00 plus the offset without one, moved on a minute while it meets another row's."""
     if not isinstance(value, list) or not 1 <= len(value) <= 24:
         raise Error("Choose 1–24 schedule entries.")
     out = []
     for row in value:
-        if (
-            not isinstance(row, dict)
-            or type(row.get("start")) is not int
-            or not 0 <= row["start"] <= 1439
-            or row.get("collection") not in COLLECTIONS
-        ):
+        if not isinstance(row, dict) or row.get("collection") not in COLLECTIONS:
             raise Error("Each schedule entry needs a time and collection.")
-        out.append({"start": row["start"], "collection": row["collection"]})
-    if len({r["start"] for r in out}) != len(out):
+        if row.get("anchor") is None:
+            if type(row.get("start")) is not int or not 0 <= row["start"] <= 1439:
+                raise Error("Each schedule entry needs a time and collection.")
+            out.append({"start": row["start"], "collection": row["collection"]})
+            continue
+        offset = row.get("offset", 0)
+        if (
+            row["anchor"] not in sun.ANCHORS
+            or type(offset) is not int
+            or not -sun.MAX_OFFSET <= offset <= sun.MAX_OFFSET
+            or offset % 5
+        ):
+            raise Error(
+                "A sunrise or sunset entry needs an offset from −240 to 240 minutes, in steps of 5."
+            )
+        out.append({"anchor": row["anchor"], "offset": offset, "collection": row["collection"]})
+    fixed = [r["start"] for r in out if "anchor" not in r]
+    pairs = [(r["anchor"], r["offset"]) for r in out if "anchor" in r]
+    if len(set(fixed)) != len(fixed) or len(set(pairs)) != len(pairs):
         raise Error("Schedule times must be different.")
+    tz = sun.zone(zone)
+    today = sun.day(on or sun.today(tz), tz, *place) if tz and place else None
+    used = set(fixed)
+    for i, r in enumerate(out):
+        if "anchor" not in r:
+            continue
+        start = sun.minute(today, r["anchor"], r["offset"], tz) if today else None
+        if start is None:
+            start = ((360 if r["anchor"] == "sunrise" else 1080) + r["offset"]) % 1440
+        while start in used:
+            start = (start + 1) % 1440
+        used.add(start)
+        out[i] = {"start": start, **r}
     return sorted(out, key=lambda r: r["start"])
 
 
@@ -208,6 +435,25 @@ class Device:
             args += ["--es", "managerAction", action]
         return self.shell(*args)
 
+    def glass_call(self, method, arg=None):
+        """One call to GlassOS's ADB-only provider; returns its JSON reply. The argument may be a lock code, so
+        neither adb's output nor a timeout (whose text holds the whole command line) reaches an error."""
+        if method not in GLASS_METHODS or (GLASS_METHODS[method] is None and arg is not None):
+            raise Error("Unknown GlassOS control.")
+        args = ["content", "call", "--uri", PROVIDER, "--method", method]
+        value = GLASS_METHODS[method](arg) if GLASS_METHODS[method] else None
+        if value is not None:
+            args += ["--arg", value]
+        try:
+            out = self.shell(*args, timeout=30)
+        except Error as e:
+            out = str(e)  # run() refuses some failure output; classified below, never shown
+        except subprocess.TimeoutExpired:
+            raise Error(TV_SLOW) from None
+        except Exception:
+            raise Error(NO_ANSWER) from None
+        return glass_reply(out)
+
 
 class Manager:
     def __init__(self, data, bundle=None):
@@ -249,6 +495,8 @@ class Manager:
             for scene in public["scenes"]:
                 scene.pop("path", None)
                 scene.pop("poster_path", None)
+            for row in public["devices"]:
+                row["sun_today"] = self._sun_today(row)
             public.update(
                 collections=COLLECTIONS,
                 jobs=json.loads(json.dumps(self.jobs[-30:])),
@@ -324,7 +572,8 @@ class Manager:
             ]
         }
         for key, prop in [("manufacturer", "ro.product.manufacturer"), ("device", "ro.product.device"),
-                          ("android", "ro.build.version.release"), ("abi", "ro.product.cpu.abilist")]:
+                          ("android", "ro.build.version.release"), ("abi", "ro.product.cpu.abilist"),
+                          ("timezone", "persist.sys.timezone")]:
             props[key] = d.shell("getprop", prop)
         memory = d.shell("cat", "/proc/meminfo")
         mem = re.search(r"MemTotal:\s+(\d+) kB", memory)
@@ -635,7 +884,12 @@ class Manager:
                 n = payload["budget_mb"]
                 if type(n) is not int or not 128 <= n <= 16384:
                     raise Error("Storage budget must be 128–16384 MB.")
-            periods = schedule(payload["schedule"]) if "schedule" in payload else None
+            # The selected TV's time zone (its main city) gives sun rows today's time as their fixed start.
+            periods = (
+                schedule(payload["schedule"], **self._sun_context(payload.get("device"), shared=True))
+                if "schedule" in payload
+                else None
+            )
             if "scene" in payload:
                 edit = payload["scene"]
                 row = next(
@@ -668,7 +922,8 @@ class Manager:
                 json.dumps([x for x in self.state["scenes"] if x["enabled"]])
             )
             budget = self.state["budget_mb"]
-            periods = self.state["schedule"][:]
+            # Sun rows' fixed starts are worked out again for this TV's time zone and today, before anything is sent.
+            periods = schedule(self.state["schedule"], **self._sun_context(id, shared=True))
         if not scenes:
             raise Error("Select at least one scene before syncing.")
         if sum(s["bytes"] for s in scenes) > budget * 1_000_000:
@@ -1020,3 +1275,485 @@ class Manager:
             self.save()
         (self.data / "icons" / (package + ".png")).unlink(missing_ok=True)
         log("Restored this app's original art on the selected TV and removed its saved replacement.")
+
+    # App lock, through GlassOS's ADB-only provider. The code is checked before connecting, goes to the TV once and
+    # is never logged, returned or saved: job records and state.json reach the browser.
+
+    def applock_status(self, id, log):
+        d = self.device(id)
+        log("Reading the app lock on the TV…")
+        return self._applock_saved(id, d.glass_call("status"), log)
+
+    def applock_set(self, id, code, log):
+        code = lock_code(code)
+        d = self.device(id)
+        log("Sending the new lock code to the TV…")
+        try:
+            d.glass_call("lock-set-code", code)
+        except Error:
+            raise  # glass_call's errors are fixed sentences
+        except Exception:
+            raise Error("Could not change the lock code; the TV keeps its old one.") from None
+        log("The TV saved the new code and showed a notice. Locked apps stay locked.")
+        return self._applock_reread(id, d, "The TV saved the new code.", log)
+
+    def applock_off(self, id, log):
+        d = self.device(id)
+        log("Turning off the app lock on the TV…")
+        d.glass_call("lock-off")
+        log("App lock is off on the TV: every app opens without a code, and the code is gone.")
+        return self._applock_reread(id, d, "App lock is off on the TV.", log)
+
+    def applock_allow_guard(self, id, log):
+        d = self.device(id)
+        log("Allowing GlassOS to display over other apps…")
+        d.shell("appops", "set", PACKAGE, "SYSTEM_ALERT_WINDOW", "allow")
+        saved = self._applock_reread(id, d, "The permission was sent.", log)
+        if not saved["overlay"]:
+            raise Error("The TV kept Display over other apps off for GlassOS.")
+        if not saved["usage"]:
+            log("Casting protection also needs Usage access: on the TV, open GlassOS Settings → Permissions.")
+        elif saved.get("guard_running"):
+            log("Casting protection is on.")
+        else:
+            log("Casting protection is allowed. It starts the next time GlassOS opens on the TV with an app locked.")
+        return saved
+
+    def _applock_reread(self, id, d, done, log):
+        try:
+            reply = d.glass_call("status")
+        except Error:
+            raise Error(done + " Its app lock could not be read back; choose Check.") from None
+        return self._applock_saved(id, reply, log)
+
+    def _applock_saved(self, id, reply, log):
+        """Keeps the non-secret part of a status reply on the device row."""
+        info = reply.get("lock")
+        if not isinstance(info, dict):
+            raise Error(NO_ANSWER)
+
+        def flag(key):
+            if type(info.get(key)) is not bool:
+                raise Error(NO_ANSWER)
+            return info[key]
+
+        def count(key):
+            if type(info.get(key)) is not int or not 0 <= info[key] <= 100_000:
+                raise Error(NO_ANSWER)
+            return info[key]
+
+        saved = {
+            "code": flag("code"),
+            "locked": count("locked"),
+            "installed_locked": count("installedLocked"),
+            "guard": flag("guard"),
+            "overlay": flag("overlay"),
+            "usage": flag("usage"),
+            "checked_at": time.time(),
+        }
+        if type(info.get("guardRunning")) is bool:
+            saved["guard_running"] = info["guardRunning"]
+        with self.lock:
+            row = next((x for x in self.state["devices"] if x["id"] == id), None)
+            if row is not None:
+                row["applock"] = saved
+                self.save()
+        n = saved["installed_locked"]
+        log(
+            ("Lock code set. " if saved["code"] else "No lock code. ")
+            + ("1 app is locked." if n == 1 else f"{n} apps are locked.")
+        )
+        return dict(saved)
+
+    # Screen Mirroring, read only. The TV's reply says whether a PIN is on its screen, never the PIN; this keeps
+    # neither the receiver's port nor its process.
+
+    MIRROR_STATES = ("STOPPED", "STARTING", "RUNNING", "ERROR")
+    MIRROR_MODES = ("IDLE", "MIRROR", "AUDIO", "VIDEO")
+    MIRROR_RES = ("auto", "1080p", "720p")
+
+    def mirroring_status(self, id, log):
+        d = self.device(id)
+        log("Reading Screen Mirroring on the TV…")
+        saved = self._mirroring_saved(id, d.glass_call("airplay-status"))
+        if not saved["supported"]:
+            log("This TV or GlassOS build has no Screen Mirroring (it needs Fire OS 6 or later).")
+        elif not saved["on"]:
+            log("Screen Mirroring is off. Turn it on in GlassOS Settings on the TV.")
+        else:
+            log("Screen Mirroring is on: " + mirroring_line(saved) + ".")
+        return saved
+
+    def _mirroring_saved(self, id, reply):
+        """Keeps the checked, non-secret part of an airplay-status reply on the device row."""
+        info = reply.get("airplay")
+        if not isinstance(info, dict):
+            raise Error(NO_ANSWER)
+
+        def flag(source, key):
+            if type(source.get(key)) is not bool:
+                raise Error(NO_ANSWER)
+            return source[key]
+
+        def choice(source, key, allowed):
+            if source.get(key) not in allowed:
+                raise Error(NO_ANSWER)
+            return source[key]
+
+        def count(key):
+            if type(info.get(key)) is not int or not 0 <= info[key] <= 1000:
+                raise Error(NO_ANSWER)
+            return info[key]
+
+        name = info.get("name")
+        # One DNS-SD label: at most 63 bytes, on one line.
+        if not isinstance(name, str) or len(name.encode()) > 63 or any(ord(c) < 32 for c in name):
+            raise Error(NO_ANSWER)
+        error = info.get("error")
+        if error is not None and (not isinstance(error, str) or not re.fullmatch(r"[a-z-]{1,40}", error)):
+            raise Error(NO_ANSWER)
+        settings = info.get("settings")
+        if not isinstance(settings, dict):
+            raise Error(NO_ANSWER)
+        saved = {
+            "supported": flag(info, "supported"),
+            "on": flag(info, "on"),
+            "state": choice(info, "state", self.MIRROR_STATES),
+            "error": error,
+            "name": name,
+            "mode": choice(info, "mode", self.MIRROR_MODES),
+            "connections": count("connections"),
+            "pin_shown": flag(info, "pinShown"),
+            "screen": flag(info, "activityVisible"),
+            "restarts": count("restarts"),
+            "gave_up": flag(info, "gaveUp"),
+            "pin": flag(settings, "pin"),
+            "resolution": choice(settings, "res", self.MIRROR_RES),
+            "sync_volume": flag(settings, "sync_volume"),
+            "checked_at": time.time(),
+        }
+        with self.lock:
+            row = next((x for x in self.state["devices"] if x["id"] == id), None)
+            if row is not None:
+                row["mirroring"] = saved
+                self.save()
+        return dict(saved)
+
+    # Sun times. The place goes to the TV and onto the device row (rounded to 0.1 degree), never into scenery.json:
+    # that file sits in the TV's shared storage. Nor do sun rows' fixed starts there come from it (two of them would
+    # give the place away): they use the time zone's main city, which only GlassOS before 1.6.0 and days without a
+    # sun time need.
+
+    def _sun_context(self, id, shared=False):
+        """schedule()'s place and zone for a saved device: the place set here, else its zone's city, else none.
+        `shared` (for scenery.json): its zone's city even when a place is set. Reads the saved record only (no adb),
+        so it is safe under self.lock."""
+        row = next((x for x in self.state["devices"] if x["id"] == id), None) if id else None
+        if not row:
+            return {}
+        zone = (row.get("sun_status") or {}).get("zone") or (row.get("health") or {}).get("timezone")
+        if not sun.zone(zone):
+            return {}
+        place = row.get("sun")
+        if place and not shared:
+            return {"place": (place["lat"], place["lon"]), "zone": zone}
+        estimate = sun.zone_place(zone)
+        return {"place": estimate[:2], "zone": zone} if estimate else {"zone": zone}
+
+    def _sun_today(self, row):
+        """Today's sun times for the daily rhythm preview, worked out here as the TV does; never fails a snapshot."""
+        try:
+            context = self._sun_context(row["id"])
+            tz = sun.zone(context.get("zone"))
+            if not tz:
+                return {"zone": None}
+            out = {"zone": context["zone"], "source": "none", "sunrise": None, "sunset": None, "polar": None}
+            if "place" not in context:
+                return out
+            saved = row.get("sun")
+            out["source"] = "manager" if saved else "timezone"
+            out["label"] = saved["label"] if saved else sun.zone_place(context["zone"])[2]
+            day = sun.day(sun.today(tz), tz, *context["place"])
+            out.update(
+                sunrise=sun.minute(day, "sunrise", 0, tz),
+                sunset=sun.minute(day, "sunset", 0, tz),
+                polar=day["polar"],
+            )
+            return out
+        except Exception:
+            return {"zone": None}
+
+    def sun_status(self, id, log):
+        d = self.device(id)
+        log("Reading sun times on the TV…")
+        return self._sun_saved(id, d.glass_call("status"), log)
+
+    def sun_set_location(self, id, location, log):
+        """Sends the place (or None: back to the time-zone estimate) to the TV; checked before connecting."""
+        place = sun_location(location)
+        d = self.device(id)
+        if place:
+            log(f"Sending {place['label'] or 'the place'} ({place['lat']:.1f}, {place['lon']:.1f}) to the TV…")
+            arg = f"{place['lat']:.1f},{place['lon']:.1f},{place['label']}"
+        else:
+            log("Asking the TV to estimate sun times from its time zone…")
+            arg = None
+        reply = d.glass_call("sun-location", arg)
+        with self.lock:
+            row = next((x for x in self.state["devices"] if x["id"] == id), None)
+            if row is not None:
+                if place:
+                    row["sun"] = place
+                else:
+                    row.pop("sun", None)
+                self.save()
+        try:
+            return self._sun_saved(id, reply, log)
+        except Error:
+            raise Error("The TV saved the place. Its sun times could not be read back; choose Check.") from None
+
+    def sun_lookup(self, log):
+        """Fills the place form from this Mac's internet address. Talks to ipinfo.io, never to a TV, and saves nothing:
+        the result goes back to the page only. Every failure is one fixed sentence."""
+        log("Asking ipinfo.io where this Mac’s internet address is…")
+        try:
+            place = ip_place(catalog.fetch(IP_LOOKUP, limit=IP_LOOKUP_LIMIT, timeout=8))
+        except Exception:
+            raise Error(IP_LOOKUP_FAILED) from None
+        log(
+            f"Found: {place['label'] or 'a place'} ({place['lat']:.1f}, {place['lon']:.1f}) — check this is right, then"
+            " Save to TV."
+        )
+        return place
+
+    def _sun_saved(self, id, reply, log):
+        """Keeps what the TV reports about sun times (status's `sun`) on the device row."""
+        info = reply.get("sun")
+        if not isinstance(info, dict):
+            raise Error(NO_ANSWER)
+        source, zone = info.get("source"), info.get("zone")
+        times = [info.get("sunrise"), info.get("sunset")]
+        if (
+            source not in ("manager", "timezone", "none")
+            or not isinstance(zone, str)
+            or not re.fullmatch(r"[A-Za-z0-9_+\-/:]{1,64}", zone)
+            or any(v is not None and not (isinstance(v, str) and re.fullmatch(r"[0-2]\d:[0-5]\d", v)) for v in times)
+            or info.get("polar") not in (None, "up", "down")
+        ):
+            raise Error(NO_ANSWER)
+        saved = {
+            "source": source,
+            "zone": zone,
+            "sunrise": times[0],
+            "sunset": times[1],
+            "polar": info.get("polar"),
+            "checked_at": time.time(),
+        }
+        if source != "none":
+            label, lat, lon = info.get("label"), info.get("lat"), info.get("lon")
+            if (
+                not isinstance(label, str)
+                or len(label) > 40
+                or any(type(v) not in (int, float) for v in (lat, lon))
+                or not -90 <= lat <= 90
+                or not -180 <= lon <= 180
+            ):
+                raise Error(NO_ANSWER)
+            saved.update(label=label, lat=lat, lon=lon)
+        with self.lock:
+            row = next((x for x in self.state["devices"] if x["id"] == id), None)
+            if row is not None:
+                row["sun_status"] = saved
+                # A place the TV has from another Mac, or from a save whose reply was lost, is the one to show here.
+                if source == "manager":
+                    row["sun"] = {"lat": sun.tenth(lat), "lon": sun.tenth(lon), "label": place_label(label)}
+                self.save()
+        where = {
+            "manager": f"{saved.get('label') or 'the place'} set from this Mac",
+            "timezone": f"{saved.get('label')}, estimated from the time zone {zone}",
+            "none": f"no place: the time zone {zone} has none, so clock times apply",
+        }[source]
+        polar = {"up": " The sun does not set there today.", "down": " The sun does not rise there today."}
+        log(
+            f"Sun times on the TV: {where}."
+            + (f" Sunrise {times[0]}, sunset {times[1]}." if times[0] and times[1] else polar.get(saved["polar"], ""))
+        )
+        return dict(saved)
+
+    # Screensaver. GlassOS cannot choose its own screensaver (that takes WRITE_SECURE_SETTINGS); the TV's ADB shell can.
+    # The first change saves the values it replaces, once, so Restore can put them back. Nothing here restarts the TV
+    # or changes its sleep timers.
+
+    def _screensaver_probe(self, d):
+        """The tracked settings (checked), whether the TV lists GlassOS's screensaver, and whether Launcher Manager,
+        which can also set the screensaver, is installed. Read only."""
+        values = {}
+        for ns, key, kind in SCREENSAVER:
+            values[key] = setting_value(kind, d.shell("settings", "get", ns, key).strip() or "null")
+        query = ("query-services", "--brief", "-a", "android.service.dreams.DreamService")
+        installed = None
+        for args in (("cmd", "package") + query, ("pm",) + query):
+            try:
+                out = d.shell(*args)
+            except Error:
+                continue  # no `cmd` before Android 7, and no query-services in older `pm`
+            if "nknown command" not in out:
+                installed = bool(re.search(r"(?m)^\s*" + re.escape(DREAM) + r"\s*$", out))
+                break
+        if installed is None:
+            # Fire OS 5 and 6: the package dump lists the services that answer each action.
+            out = d.shell("dumpsys", "package", PACKAGE)
+            installed = "android.service.dreams.DreamService" in out and DREAM in out
+        launcher = "package:" + LAUNCHER_MANAGER in d.shell("pm", "list", "packages", LAUNCHER_MANAGER).split()
+        return values, installed, launcher
+
+    def _screensaver_saved(self, id, values, installed, launcher):
+        """Keeps what the TV reports about its screensaver on the device row, beside the saved previous values."""
+        active = values["screensaver_components"].split(",")[0] == DREAM
+        blockers, warnings = [], []
+        if values["stay_on_while_plugged_in"] not in ("null", "0"):
+            blockers.append("Stay awake while plugged in is on, so no screensaver can start.")
+        if values["amazon_ambient_enabled"] not in ("null", "0"):
+            blockers.append("Amazon’s Ambient Experience is on, and it overrides other screensavers.")
+        sleep, off = values["sleep_timeout"], values["screen_off_timeout"]
+        if sleep != "null" and off != "null" and 0 < int(sleep) <= int(off):
+            warnings.append("This TV goes to sleep no later than a screensaver would start, so it may sleep instead.")
+        if launcher:
+            warnings.append("Launcher Manager is installed, and it can change the screensaver too.")
+        with self.lock:
+            row = next((x for x in self.state["devices"] if x["id"] == id), None)
+            saver = row.setdefault("screensaver", {}) if row is not None else {}
+            # Set from here and not restored since, yet the TV now has a third screensaver (not the one saved: a TV
+            # that went back to its own, even straight after Use GlassOS scenery, was not changed elsewhere).
+            previous = saver.get("previous")
+            drift = (
+                isinstance(previous, dict)
+                and not active
+                and values["screensaver_components"] != previous.get("screensaver_components")
+            )
+            if drift:
+                warnings.insert(0, "The screensaver was changed elsewhere since GlassOS Manager set it.")
+            saver.update(
+                current=dict(values),
+                installed=installed,
+                launcher_manager=launcher,
+                active=active,
+                blockers=blockers,
+                warnings=warnings,
+                drift=drift,
+                checked_at=time.time(),
+            )
+            if row is not None:
+                self.save()
+            return json.loads(json.dumps(saver))
+
+    def _screensaver_report(self, status, log):
+        components = status["current"]["screensaver_components"]
+        log(
+            "Screensaver: "
+            + ("GlassOS scenery." if status["active"] else "not set." if components == "null" else components + ".")
+        )
+        for line in status["blockers"] + status["warnings"]:
+            log(line)
+
+    def screensaver_check(self, id, log):
+        d = self.device(id)
+        log("Reading the TV’s screensaver settings…")
+        status = self._screensaver_saved(id, *self._screensaver_probe(d))
+        self._screensaver_report(status, log)
+        if not status["installed"]:
+            log("GlassOS’s screensaver is not on this TV. " + UPDATE_GLASSOS)
+        return status
+
+    def screensaver_set(self, id, options, log):
+        """Makes GlassOS scenery the TV's screensaver; with `options`, also turns off what would stop it starting."""
+        options = screensaver_options(options)
+        d = self.device(id)
+        log("Reading the TV’s screensaver settings…")
+        values, installed, launcher = self._screensaver_probe(d)
+        if not installed:
+            self._screensaver_saved(id, values, installed, launcher)
+            raise Error("GlassOS’s screensaver is not on this TV. " + UPDATE_GLASSOS)
+        writes = [
+            ("secure", "screensaver_components", DREAM),
+            ("secure", "screensaver_enabled", "1"),
+            ("secure", "screensaver_activate_on_sleep", "1"),
+        ]
+        ambient = options["ambient"] and values["amazon_ambient_enabled"] not in ("null", "0")
+        if ambient:
+            writes.append(("secure", "amazon_ambient_enabled", "0"))
+        if options["stayAwake"] and values["stay_on_while_plugged_in"] not in ("null", "0"):
+            writes.append(("global", "stay_on_while_plugged_in", "0"))
+        kinds = {key: kind for _, key, kind in SCREENSAVER}
+        with self.lock:
+            row = next((x for x in self.state["devices"] if x["id"] == id), None)
+            if row is None:
+                raise Error("Choose a saved Fire Stick first.")
+            saver = row.setdefault("screensaver", {})
+            # Saved once: using it again keeps the values from before the first time, which Restore puts back.
+            if "previous" not in saver:
+                saver.update(previous=dict(values), saved_at=time.time(), changed=[])
+                log("Saved the TV’s current screensaver settings on this Mac, so Restore can put them back.")
+            # Noted before writing, so Restore also covers a change made before a later one failed.
+            changed = set(saver.get("changed", [])) | {key for _, key, _ in writes}
+            saver["changed"] = [key for _, key, _ in SCREENSAVER if key in changed]
+            self.save()
+        for ns, key, value in writes:
+            d.shell("settings", "put", ns, key, setting_value(kinds[key], value))
+        status = self._screensaver_saved(id, *self._screensaver_probe(d))
+        if not status["active"]:
+            raise Error(
+                "The TV did not keep GlassOS scenery as its screensaver. Its saved settings stay on this Mac; choose "
+                "Restore previous screensaver to put back what changed."
+            )
+        log("GlassOS scenery is now this TV’s screensaver: it starts when the TV is idle, never during a video.")
+        if ambient:
+            log("Restart the TV once, so Amazon’s Ambient Experience lets go of the screensaver.")
+        for line in status["blockers"] + status["warnings"]:
+            log(line)
+        return status
+
+    def screensaver_restore(self, id, log):
+        """Puts back what GlassOS Manager changed, as saved before its first change, unless the TV has since been
+        given another screensaver: that is left alone, and so is everything else."""
+        with self.lock:
+            row = next((x for x in self.state["devices"] if x["id"] == id), None)
+            saved = json.loads(json.dumps((row or {}).get("screensaver") or {}))
+        previous, changed = saved.get("previous"), saved.get("changed", [])
+        if not isinstance(previous, dict) or not isinstance(changed, list):
+            raise Error("GlassOS Manager has not changed this TV’s screensaver, so there is nothing to restore.")
+        # Checked again before anything reaches the TV: state.json is an ordinary file on this Mac.
+        plan = [(ns, key, setting_value(kind, previous.get(key))) for ns, key, kind in SCREENSAVER if key in changed]
+        d = self.device(id)
+        log("Reading the TV’s screensaver settings…")
+        values, installed, launcher = self._screensaver_probe(d)
+        # Back on the saved screensaver (the TV's own), the saved values suit it; another one could break.
+        components = values["screensaver_components"]
+        if components.split(",")[0] != DREAM and components != previous.get("screensaver_components"):
+            self._screensaver_saved(id, values, installed, launcher)
+            raise Error(
+                "The TV’s screensaver was changed elsewhere since GlassOS Manager set it, so nothing was restored. "
+                "To put the saved settings back anyway, choose Use GlassOS scenery, then Restore previous screensaver."
+            )
+        for ns, key, value in plan:
+            # A setting that was not there before is removed, not set to the text "null".
+            if value == "null":
+                d.shell("settings", "delete", ns, key)
+            else:
+                d.shell("settings", "put", ns, key, value)
+        after = self._screensaver_probe(d)
+        if any(after[0][key] != value for _, key, value in plan):
+            self._screensaver_saved(id, *after)
+            raise Error("The TV did not take back every saved setting. They stay saved on this Mac; try Restore again.")
+        with self.lock:
+            row = next((x for x in self.state["devices"] if x["id"] == id), None)
+            if row is not None:
+                for key in ("previous", "saved_at", "changed"):
+                    row.get("screensaver", {}).pop(key, None)
+                self.save()
+        status = self._screensaver_saved(id, *after)
+        log("Restored the screensaver settings this TV had before GlassOS Manager changed them.")
+        if "amazon_ambient_enabled" in changed and previous.get("amazon_ambient_enabled") not in ("null", "0"):
+            log("Restart the TV once, so Amazon’s Ambient Experience comes back.")
+        self._screensaver_report(status, log)
+        return status

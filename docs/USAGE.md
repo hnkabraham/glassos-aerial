@@ -21,6 +21,22 @@ Uninstall is offered only for downloaded apps, excluding GlassOS Aerial itself a
 
 The launcher requests the standard [uninstall confirmation](https://developer.android.com/reference/android/content/Intent#ACTION_UNINSTALL_PACKAGE) with [REQUEST_DELETE_PACKAGES](https://developer.android.com/reference/android/Manifest.permission#REQUEST_DELETE_PACKAGES). It does not use root, self-ADB, silent deletion, or all-user removal. No permissions prompt or setup change is needed for this normal manifest permission.
 
+### App lock
+
+Highlight an app, **hold OK**, then choose **Lock app**. The first time, choose a code: press any 4 of the arrows, Rewind, Play/Pause or Fast forward (a button can repeat), then press the same 4 again. OK, Back, Home and Menu are never part of a code. A locked app shows a small padlock on its tile, in the top row, the drawer and inside folders.
+
+Opening a locked app from GlassOS (its tile, a folder or the Top Shelf) asks for the code; Back cancels. To lock it however it opens (a phone casting to it, Alexa, the remote's app buttons), GlassOS needs **Usage access** and **Display over other apps** (Settings > Permissions). A small background guard then watches which app comes to the front, as the Home watcher does, and covers a locked one with the code screen. The app beneath stops; the right code lets it carry on, and Back goes Home. The app stays open until another app or Home comes to the front or the TV sleeps (a screensaver coming on does not count, including Amazon's Ambient Experience on Fire TV, which is not yet tested there), so opening it again while it is already open and unlocked is not interrupted. A cast that arrives while the code screen is up may need to be sent again from the phone once the app is unlocked. Without those permissions, locking still works from GlassOS and the lock card says what is missing.
+
+Hold OK and choose **Unlock app** to remove one lock (it needs the code). **Settings > App lock** shows how many apps are locked; with the code it offers **Change code** and **Turn off app lock**, which unlocks every app and forgets the code. After 5 wrong codes in a row, entry waits 30 seconds. GlassOS itself, home apps (such as Launcher Manager) and screensavers cannot be locked. A locked app that is uninstalled stays locked if it is reinstalled.
+
+The code is stored only as a salted SHA-256 hash in GlassOS's private settings. Backups never include the code or the locked apps, so a restored backup neither carries nor removes a lock.
+
+**Limits.** This is a launcher lock, not a security boundary. Someone who can use the TV's own Settings can force stop or clear GlassOS, which turns the guard off until GlassOS opens again. Locking Fire TV Settings as well closes most of those routes, but then a forgotten code needs ADB. The guard checks every 120 ms with the screen on, so a cast or voice-opened app can show for a moment before the code screen covers it; just after the Home button, Android can delay the cover by up to 5 seconds. Amazon's own parental-controls PIN is separate and unaffected.
+
+**Forgot the code?** With the [Mac manager](../manager/README.md#tv-controls), choose the TV, open **TV controls** and choose **Set a new lock code**. The old code is not needed, and locked apps stay locked. **Turn off app lock** there unlocks every app and forgets the code instead. Both need ADB debugging on the TV and GlassOS 1.6.0 or later; the TV shows a notice when either is used. Without the manager, back up settings, clear GlassOS's data (Fire TV Settings > Applications > Manage installed applications > GlassOS Aerial > Clear data, or `adb shell pm clear io.github.abhishekkaisar.glassos.aerial`), finish setup again and choose **Restore from backup**. Clearing data also forgets your name, TMDB key and setup choices; check Settings > Permissions afterwards.
+
+The manager's route adds no new way past the lock. Anyone who can use the TV's ADB can already defeat it (`pm clear`, `appops`, force stop), so GlassOS accepts these controls only from the TV's ADB shell; other apps on the TV cannot use them. A new code travels to the TV over ADB's network connection as plain text, so set it on a home network you trust.
+
 ### Most-used app order
 
 Choose **Settings > App order > Most used**. The six most-used top-level items move to the top row; the rest of the drawer follows in descending usage order. Folder contents sort too, and each folder ranks by its visible members' combined time. Hidden and uninstalled apps do not contribute to that folder's score. Equal scores keep the order from your saved layout. Home-handler apps (including Launcher Manager), screensavers and Fire TV Ambient Experience receive no usage score, so idle/setup time does not promote them. They remain available in the app list.
@@ -79,7 +95,8 @@ thumbnail over the playing video. Thumbnails are decoded at thumbnail size off t
   the play order, the clip and its position survive restarting the app. Favourites only falls back to every visible
   scene when no favourite can play.
 - With the Top Shelf focused, **Left** and **Right** change the scene. When a clip changes its name shows top left for
-  a few seconds (turn this off with Scene names).
+  a few seconds (turn this off with Scene names); in cinema mode and the screensaver it shows bottom left while the
+  cinema clock is in the top left corner, and makes way if the clock moves to it.
 - Empty folder, every scene hidden, files gone or clips this TV cannot decode: the poster or the background chosen
   under "When Top Shelf art is unavailable" shows instead, and the browser says why.
 
@@ -115,6 +132,14 @@ An optional `scenery.json` alongside the videos defines the daily schedule:
 
 `start` is a whole number of minutes after local midnight: 420 is 07:00, 720 is 12:00, and 1200 is 20:00. There may be 1–24 entries with distinct times; the last wraps into the following morning. `all` is also a valid scheduled collection. The file is limited to 8 KB. Malformed or missing schedules use All scenes. Choose **Scheduled** on the TV to enable it; the default remains All scenes. Minute ticks, clock/timezone changes and returning Home refresh the selection. The schedule is media metadata; a settings backup includes the selected mode but does not carry this file.
 
+An entry can also follow the sun. In the manager, set its **Starts at** to Sunrise or Sunset and give an offset in minutes. In the file, add `anchor` (`"sunrise"` or `"sunset"`) and `offset` (whole minutes from −240 to 240; negative is before):
+
+```json
+{"start": 1113, "anchor": "sunset", "offset": 30, "collection": "space"}
+```
+
+GlassOS 1.6.0 and later starts this entry 30 minutes after today's sunset, worked out each day for the TV's place (see [Sun times](#sun-times)). `start` is still required, and starts must still differ. The manager sets it to that day's time in the TV's time zone's main city when you save and sync; a place set from the Mac never goes into this file. GlassOS uses it on days without a sunrise or sunset and when it has no place. GlassOS 1.5.x and earlier read only `start`, so they keep the times of your last sync. An unknown `anchor` or an `offset` out of range leaves that entry at its `start`.
+
 ### Cinema mode
 
 After a while without input (Settings > **Cinema mode**: Off, 30 s, 1, 2, 5, 10 or 30 minutes; 1 minute by default)
@@ -125,6 +150,41 @@ while GlassOS's home is in front and uncovered (not under Settings, a panel, a s
 keeps the TV awake and changes no system setting: the Fire TV or Android TV screensaver, sleep and the GlassOS sleep
 timer work exactly as before.
 
+### Screensaver
+
+GlassOS can be the TV's screensaver. When the TV is idle in any app, it plays the same scenery as the home: the clips
+in Movies/GlassAerial (whatever the Top Shelf shows), with your collection, favourites, shuffle and daily rhythm,
+carrying on from where the home stopped. Scene names, the cinema clock (and Move cinema clock) and night mode follow
+your Settings. It does not start while a video is playing, and the first button press wakes the TV. With no clips, or
+without storage access, it shows the background chosen under "When Top Shelf art is unavailable" (with the cinema
+clock, if it is on); it never ends on its own.
+
+GlassOS cannot choose its own screensaver: that is a protected TV setting, changed over ADB. In the
+[Mac manager](../manager/README.md#tv-controls), choose the TV, open **TV controls**, choose **Check** in the
+Screensaver panel, then **Use GlassOS scenery**. Its confirmation lists every setting it changes. The first time, the
+manager saves the values it replaces on the Mac. It never restarts the TV and never changes its sleep timers.
+
+**Settings > Screensaver** (Scenery and display, after Move cinema clock) shows **GlassOS scenery** or the TV's own,
+such as "Fire TV’s own". Choose it for a card that says how to turn it on and offers **Preview**, which plays the
+screensaver at once, even before it is the TV's screensaver; any button ends it. Preview is offered when GlassOS is open as an app (as it is through Launcher
+Manager), not in the cover it shows over Fire TV's Home.
+
+**Fire TV.**
+
+- Amazon's **Ambient Experience** takes over from any other screensaver while it is on. The manager offers to turn it
+  off; restart the TV once afterwards.
+- With **Stay awake while plugged in** on (Developer options), no screensaver starts. The manager offers to turn it off.
+- If the TV is set to sleep no later than its screensaver would start, it may sleep instead. The manager says so but
+  leaves the sleep timers alone.
+- Launcher Manager can also change the screensaver; the manager warns when it is installed.
+- Not yet verified: whether Fire OS 8.1.8.5 (Fire TV Stick 4K Max, 2nd generation) keeps a third-party screensaver
+  after these steps.
+
+**Restore previous screensaver** in the manager puts back only the settings it changed, as they were before its first
+change; a setting that did not exist is removed again. This also works when the TV did not keep GlassOS scenery. If
+another screensaver (neither GlassOS scenery nor the saved one) was chosen since, it changes nothing and keeps the saved
+values. Restart the TV once if it turned Ambient Experience back on.
+
 ### Night mode
 
 Settings > **Night mode**, with **Night starts** and **Night ends** (Left and Right step half an hour; a window like
@@ -132,6 +192,36 @@ Settings > **Night mode**, with **Night starts** and **Night ends** (Left and Ri
 dark layer over its scenery and app grid; menus and panels stay full brightness. It is launcher dimming only and
 does not change the TV's brightness. It follows the clock, time and time zone changes using the system's minute
 tick while GlassOS is open, with no timer of its own. Equal start and end times mean night mode never turns on.
+
+**Night follows** chooses **Clock** (the times above) or **Sunset & sunrise**. With the sun, **Night starts** counts from
+sunset and **Night ends** from sunrise: Left and Right step 15 minutes, up to 2 hours either way, and the value shows
+today's time, such as "Sunset +30 · 6:42 PM". When there are no sun times (no place for the TV's time zone, or a day
+when the sun does not set or rise), or when the offsets leave no night or no day (short summer nights or winter days far
+north or south), night mode uses the clock times and the value says so, such as "Sunset +30 · uses 10:00 PM". Turn
+Night follows back to Clock to change those times.
+
+### Sun times
+
+Night mode and the daily rhythm can follow sunrise and sunset. GlassOS works the times out on the TV, with no network,
+for one place:
+
+- **From the TV's time zone** (the default): the zone's main city, such as Los Angeles for America/Los_Angeles, from
+  the public time zone database, to 0.1°. This is an estimate: if you live far from that city it can be off by about
+  an hour, or more in a wide time zone (such as China's) or far north. Zones without a city, such as UTC, have no sun
+  times, so everything keeps its clock times.
+- **From the Mac**: a place set in [GlassOS Manager > Daily rhythm](../manager/README.md#daily-rhythm) under **Sun
+  times location**, typed as a latitude and longitude, taken from the Mac's location, or looked up from the Mac's
+  internet address (ipinfo.io; a VPN or mobile hotspot can give the wrong city, so check it before saving). **Use time
+  zone estimate** there goes back to the estimate.
+
+**Settings > Sun times** shows where the times come from ("Los Angeles · estimate", "Home · from Mac" or
+"Unavailable"; a long place name is shortened, never its source); choose it to see today's sunrise and sunset. They
+are worked out again each day and when the time zone changes. Far north or south, on a day when the sun does not set
+or does not rise, the clock times are used.
+
+**Privacy.** The place is rounded to 0.1° (about 11 km) before it leaves the manager's page. It is kept only in
+GlassOS's private settings on the TV and in the manager's data folder on the Mac, never in a settings backup or in
+`scenery.json`. Clearing GlassOS's data forgets it.
 
 ### App folders
 
@@ -144,6 +234,18 @@ tick while GlassOS is open, with no timer of its own. Equal start and end times 
   top row, rename or remove it. Folder tiles show a small grid of their apps.
 - Hidden or uninstalled apps stay members and come back in their folder when shown again or reinstalled. Every
   installed app that is not hidden is always somewhere: on the top row, in the drawer or in one folder.
+
+### Screen Mirroring
+
+**Settings > Screen Mirroring > Mirroring** (or Control Center > **Screen Mirroring**) lets an iPhone, iPad or Mac
+mirror its screen or play music on the TV, compatible with AirPlay. It is off until you turn it on, and is shown only
+on Fire OS 6 / Android 7.1 or later in builds that include it. On the sender, choose **Screen Mirroring** and the TV's
+name; **Status** in Settings shows what the receiver is doing. Back hides the mirrored screen while mirroring goes on;
+the Control Center tile, which then reads **Mirroring**, brings it back. **TV name**, **Require PIN** (a code shown on
+the TV), **Resolution** and **Sender controls TV volume** are in the same section. To show a session that starts while
+another app is open on Android 10 and later (Fire OS 8), GlassOS needs **Display over other apps** (Settings >
+Permissions); it never turns that on by itself. Details, network exposure, troubleshooting and what is not supported yet are in the
+[Screen Mirroring guide](SCREEN-MIRRORING.md).
 
 ### Back up and restore settings
 
@@ -164,11 +266,13 @@ adb -s <new-tv> push glassos-aerial-backup-20261024-163012.json /sdcard/Document
 ```
 
 A backup holds only: the top row, drawer order and hidden apps, folders, the Top Shelf source and built-in
-fallback background, focus sounds, cinema, night and effects settings, the Manual/Most used preference, and scenery favourites, hidden scenes,
-shuffle, favourites only and scene names. It never holds the TMDB key or other credentials, your name, photo or
-country, setup and permission state, Home replacement and routing, the sleep timer, playback positions, device
+fallback background, focus sounds, cinema, night (including Night follows and its offsets) and effects settings, the Manual/Most used preference, scenery favourites, hidden scenes,
+shuffle, favourites only and scene names, and Screen Mirroring's on/off state, TV name, Require PIN, Resolution and
+Sender controls TV volume, where the TV and build have Screen Mirroring (restoring them starts or stops the receiver to
+match, and the confirmation says when it would turn it on; never its pairing identity). It never holds the TMDB key or other credentials, your name, photo or
+country, the sun times place, setup and permission state, Home replacement and routing, the sleep timer, playback positions, device
 identifiers, network details, media or signing data. Apps and clips missing on the new TV are kept in the settings
-and appear once installed or copied.
+and appear once installed or copied. A backup made before 1.6.0 restores Night follows as Clock.
 
 ### Lighter visual effects
 
@@ -207,8 +311,8 @@ Every feature works without its permission, with less:
 
 | Permission | Used for | Without it |
 |---|---|---|
-| Usage access | Most-used app order; also detecting stock Home for the optional watcher | Most-used mode keeps manual order; the watcher cannot detect stock Home |
-| Display over other apps | Showing GlassOS at once after Home | GlassOS still comes back, a moment later |
+| Usage access | Most-used app order; app lock's casting protection; also detecting stock Home for the optional watcher | Most-used mode keeps manual order; the watcher cannot detect stock Home; locked apps ask for the code only when opened from GlassOS |
+| Display over other apps | Showing GlassOS at once after Home; app lock's casting protection and Screen Mirroring over another app (both Android 10 and later) | GlassOS still comes back, a moment later; on Android 10 and later, casts and Alexa can open locked apps without the code, and mirroring that starts over another app plays hidden until you choose Mirroring in Control Center |
 | Notification access | Now Playing and Do Not Disturb | Those tiles are hidden or open the TV's settings |
 | Device admin | Sleep and the sleep timer | Fire TV: Sleep opens the Fire TV sleep menu. Android TV: Sleep is unavailable |
 | Storage | Your profile photo and own backgrounds, aerial videos in Movies/GlassAerial, backups in Documents/GlassOS-Aerial | The glass avatar and built-in scenes; backups go to the app's own folder |
@@ -274,13 +378,14 @@ also be typed in Settings > TMDB API key.
 Requirements: JDK 17 and the Android SDK (platform 34, build tools 34.0.0).
 
 ```sh
-./gradlew testDebugUnitTest    # JVM unit tests: shuffle order, scene names, night windows, folders, backups
+./gradlew testDebugUnitTest    # JVM unit tests: shuffle order, scene names, night windows, folders, backups, app lock codes, sun times, schedules
 ./gradlew assembleDebug lint   # app/build/outputs/apk/debug/app-debug.apk
 ./gradlew assembleRelease      # minified with R8; signed if a keystore is configured (see ../CONTRIBUTING.md)
 ```
 
-The unit tests cover the pure logic in `SceneLogic.kt`, `NightSchedule.kt`, `FolderModel.kt` and `BackupCodec.kt`, and
-backup file writing (no device needed). The views, playback and remote navigation need a TV or the Android TV
+The unit tests cover the pure logic in `SceneLogic.kt`, `SceneCollections.kt`, `NightSchedule.kt`, `FolderModel.kt`,
+`BackupCodec.kt`, `UsageOrder.kt`, `AppLock.kt`, `SunTimes.kt` and `ZoneCoords.kt`, and backup file writing (no device
+needed). The views, playback and remote navigation need a TV or the Android TV
 emulator.
 
 **Target API.** GlassOS Aerial is sideloaded onto TVs (Fire TV, Android TV, Google TV) and is not published on Google

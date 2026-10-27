@@ -81,7 +81,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     lateinit var folderPanel: FolderPanel
         private set
     private lateinit var sceneLabel: SceneLabel
-    private lateinit var cinemaClock: TextView
+    private lateinit var cinemaClock: CinemaClock
     private lateinit var nightDim: View
 
     private var apps: List<AppEntry> = emptyList()
@@ -104,6 +104,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     private val idleCheck = Runnable { checkIdle() }
     private var nightOn = false
     private var nightLevelShown = -1f
+    /** The date, zone and clock format Settings' sun values were last read for (see [updateTime]). */
+    private var sunDay = ""
     private val ok: List<Pair<String, () -> Unit>> = listOf("OK" to {})
     private val dockTiles = ArrayList<TileView>()
     private val dockPkgs = ArrayList<String>()
@@ -163,6 +165,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         Backdrop.addListener(backdropListener)
         Backdrop.addFrameListener(frameListener)
         Effects.load(prefs)
+        AppLock.load(prefs)
         buildUi()
         applyNight()
         worker.execute { HomeShare.ensureSound(ctx) }
@@ -171,6 +174,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         HomeShare.avatar?.let { gear.avatar = it }
         val cached = HomeShare.apps
         if (cached != null) applyApps(cached) else loadApps()
+        // Scenery stops while the Screen Mirroring receiver decodes a mirrored screen (it starts nothing).
+        ScreenMirroring.watch(ctx, prefs)
     }
 
     fun release() {
@@ -180,6 +185,9 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         Backdrop.removeFrameListener(frameListener)
         hero.release()
         aerial.release()
+        // Screen Mirroring's status listeners, if a panel was open.
+        if (::settings.isInitialized) settings.release()
+        if (::cc.isInitialized) cc.release()
         labelAnim?.cancel()
         main.removeCallbacksAndMessages(null)
         worker.shutdownNow()
@@ -238,6 +246,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
                 if (browser.isOpen) browser.refresh()
             }
             onUnavailable = { if (browser.isOpen) browser.refresh() }
+            onOwnerChanged = { updateHeroRunning() }
         }
         root.addView(aerial, FrameLayout.LayoutParams(-1, -1))
         // With the aerial scenery, Left and Right on the Top Shelf change the scene and OK opens Scenery.
@@ -323,20 +332,14 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             topMargin = sh * 48 / 1080
         })
 
-        // The scene's name, top left where title logos go (the aerial source has none).
+        // The scene's name, top left where title logos go (the aerial source has none); bottom left in cinema mode while
+        // the clock is top left.
         sceneLabel = SceneLabel(ctx)
         root.addView(sceneLabel, FrameLayout.LayoutParams(sw * 50 / 100, -2, Gravity.TOP or Gravity.START).apply {
             leftMargin = sw * 60 / 1920; topMargin = sh * 44 / 1080
         })
         // Cinema clock moves between safe corners once per minute while the rest of home is faded out.
-        cinemaClock = TextView(ctx).apply {
-            textSize = 54f
-            typeface = Fonts.light
-            setTextColor(0xF2FFFFFF.toInt())
-            setShadowLayer(ctx.dp(10f), 0f, ctx.dp(1f), 0x99000000.toInt())
-            alpha = 0f
-            visibility = View.GONE
-        }
+        cinemaClock = CinemaClock(ctx)
         root.addView(cinemaClock, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply {
             rightMargin = sw * 64 / 1920; bottomMargin = sh * 48 / 1080
         })
@@ -361,7 +364,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         root.viewTreeObserver.addOnGlobalFocusChangeListener { old, new ->
             if (old != null && new != null && old !== new && prefs.sound && !FocusAnim.forceInstant) sound?.tick()
             if (new === hero || old === hero) updateHeroRunning()
-            if (new === hero) aerial.current()?.let { sceneLabel.show(it.name, SCENE_HINT, 0) }
+            if (new === hero) aerial.current()?.let { sceneLabel.show(it.name, SCENE_HINT, 0, labelCorner()) }
             else if (old === hero) sceneLabel.hide()
             if (::chevron.isInitialized) chevron.animate().alpha(if (new is TileView && (new.tag as? Int) == 0) 1f else 0f).setDuration(200).start()
             if (new is TileView) {
@@ -427,13 +430,17 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         }
     }
 
-    /** The hero rotates only while the home row is on screen, nothing covers it and it is not focused. */
+    /**
+     * The hero rotates only while the home row is on screen, nothing covers it and it is not focused, and not while the
+     * screensaver holds the decoder (on Android 10 and earlier the home stays resumed beneath it).
+     */
     fun updateHeroRunning() {
         if (!::hero.isInitialized || released) return
         // Scenery keeps playing behind its own browser (and the browser's option cards), so a choice shows at once.
         val covered = settings.isOpen || cc.isOpen || setup.isOpen || folderPanel.isOpen || (appMenu.isOpen && !browser.isOpen)
         val visible = resumed && currentRow == 0 && !covered && !editMode && movingPkg == null
-        hero.setRunning(visible && !browser.isOpen && !hero.isFocused && prefs.topShelf != HeroRepo.SRC_AERIAL)
+        hero.setRunning(visible && SceneSession.owner == null && !browser.isOpen && !hero.isFocused &&
+            prefs.topShelf != HeroRepo.SRC_AERIAL)
         aerial.setRunning(visible)
         syncIdle()
     }
@@ -449,16 +456,18 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             Toast.makeText(ctx, "None of your apps streams this title here", Toast.LENGTH_SHORT).show()
             return
         }
-        val url = s.url
-        if (url != null) {
-            val i = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).setPackage(pkg)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            if (i.resolveActivity(ctx.packageManager) != null) {
-                host.startApp(i, pkg, null)
-                return
+        unlockThen(pkg) {
+            val url = s.url
+            if (url != null) {
+                val i = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).setPackage(pkg)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (i.resolveActivity(ctx.packageManager) != null) {
+                    host.startApp(i, pkg, null)
+                    return@unlockThen
+                }
             }
+            openApp(pkg, null)
         }
-        launch(pkg, null)
     }
 
     /**
@@ -582,6 +591,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     fun onResumed() {
         lastInput = SystemClock.uptimeMillis()
         resumed = true
+        // Home in front: an app opened with the lock code is locked again.
+        AppLock.session.end()
         updateHeroRunning()
         if (::setup.isInitialized) setup.onReturned()
         updateTime()
@@ -593,14 +604,20 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
 
     fun updateTime() {
         if (!::gear.isInitialized) return
-        val fmt = if (android.text.format.DateFormat.is24HourFormat(ctx)) "H:mm" else "h:mm a"
-        gear.time = android.text.format.DateFormat.format(fmt, System.currentTimeMillis()).toString().uppercase()
+        gear.time = CinemaClock.time(ctx)
         if (::cinemaClock.isInitialized) cinemaClock.text = gear.time
         if (cinema) positionCinemaClock()
         // The minute tick, time and time zone changes all land here: night mode follows them without a timer.
         applyNight()
-        if (::aerial.isInitialized && prefs.sceneCollection == "scheduled" && prefs.topShelf == HeroRepo.SRC_AERIAL)
-            aerial.setPlaylist(aerialClips, true, sceneChoice())
+        // So does an open Settings panel's sun values, but only when they change: a new zone, date or clock format.
+        val day = SunNow.dayKey() + if (android.text.format.DateFormat.is24HourFormat(ctx)) " 24h" else ""
+        if (day != sunDay) {
+            sunDay = day
+            if (::settings.isInitialized) settings.refreshValues()
+        }
+        // While the screensaver holds the decoder, it keeps the shared play order on schedule (the home never claims).
+        if (::aerial.isInitialized && SceneSession.owner == null && prefs.sceneCollection == "scheduled" &&
+            prefs.topShelf == HeroRepo.SRC_AERIAL) aerial.setPlaylist(aerialClips, true, sceneChoice())
     }
 
     private fun storageGranted() = Build.VERSION.SDK_INT < 23 ||
@@ -795,6 +812,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         } else {
             items.add("Add to a folder" to { chooseFolder(pkg) })
             items.add("Hide app" to { hideApp(pkg) })
+            lockItem(pkg)?.let { items.add(it) }
             if (Platform.canUninstall(ctx, pkg)) items.add("Uninstall" to { requestUninstall(pkg) })
         }
         card(app.label, items, if (prefs.mostUsed)
@@ -880,6 +898,10 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
 
     fun launch(pkg: String, from: View?) {
         if (Folders.isFolderId(pkg)) { openFolder(pkg); return }
+        unlockThen(pkg) { openApp(pkg, from) }
+    }
+
+    private fun openApp(pkg: String, from: View?) {
         val pm = ctx.packageManager
         val i = pm.getLeanbackLaunchIntentForPackage(pkg) ?: pm.getLaunchIntentForPackage(pkg)
         if (i == null) {
@@ -1113,6 +1135,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         } else {
             items.add("Add to a folder" to { dropMove(); chooseFolder(pkg) })
             items.add("Hide app" to { dropMove(); hideApp(pkg) })
+            lockItem(pkg) { dropMove() }?.let { items.add(it) }
             if (Platform.canUninstall(ctx, pkg)) items.add("Uninstall" to { cancelMove(); requestUninstall(pkg) })
         }
         appMenu.open(app.label, items) {
@@ -1289,13 +1312,13 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
      * An option card over whatever is open (the home, Settings, Scenery, a folder). The panels under it cannot take
      * focus while it is up; when it closes without an action that moves focus, focus returns where it was.
      */
-    fun card(heading: String, items: List<Pair<String, () -> Unit>>, message: String? = null) {
+    fun card(heading: String, items: List<Pair<String, () -> Unit>>, message: String? = null, code: ((String) -> Unit)? = null) {
         if (appMenu.isOpen) appMenu.close()
         val back = focused()
         val under = listOf<ViewGroup>(settings, browser, folderPanel).filter { it.visibility == View.VISIBLE }
         under.forEach { it.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS }
         blockHome(true)
-        appMenu.open(heading, items, message) {
+        appMenu.open(heading, items, message, code) {
             under.forEach { it.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS }
             syncHomeBlock()
             if (back != null && back.isAttachedToWindow && back.isShown) back.requestFocus()
@@ -1305,18 +1328,137 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         updateHeroRunning()
     }
 
+    // ---------- App lock ----------
+
+    private fun labelOf(pkg: String) = apps.firstOrNull { it.pkg == pkg }?.label ?: entries[pkg]?.label ?: pkg
+
+    /** Hold OK's Lock app or Unlock app; null for GlassOS, home apps and screensavers. [before] runs first. */
+    fun lockItem(pkg: String, before: () -> Unit = {}): Pair<String, () -> Unit>? = when {
+        !AppLock.canLock(ctx, pkg) -> null
+        pkg in AppLock.locked -> "Unlock app" to { before(); unlockApp(pkg) }
+        else -> "Lock app" to { before(); lockApp(pkg) }
+    }
+
+    /** Locking needs no code (the first lock chooses it); unlocking does. */
+    private fun lockApp(pkg: String) {
+        if (prefs.lockCode.isEmpty()) { chooseCode { lockApp(pkg) }; return }
+        setLocked(pkg, true)
+        val label = labelOf(pkg)
+        if (AppLockGuard.available(ctx)) Toast.makeText(ctx, "$label is locked. Opening it needs your code.", Toast.LENGTH_LONG).show()
+        else card("$label is locked", permissionItems(), "Opening it from GlassOS needs your code. To lock it when it is cast to " +
+            "or opened by Alexa or a remote button too, allow Usage access and Display over other apps.")
+    }
+
+    private fun unlockApp(pkg: String) {
+        val label = labelOf(pkg)
+        askCode("Unlock $label", "Enter your lock code.") {
+            setLocked(pkg, false)
+            Toast.makeText(ctx, "$label is unlocked", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun setLocked(pkg: String, on: Boolean) {
+        AppLock.set(ctx, prefs, if (on) AppLock.locked + pkg else AppLock.locked - pkg)
+        redrawLocks()
+        syncOther()
+    }
+
+    /** Tiles draw their padlock from [AppLock.locked]: redraw them and what shows the count. */
+    private fun redrawLocks() {
+        for (r in rows) for (t in r) t.invalidate()
+        if (folderPanel.isOpen) invalidateDeep(folderPanel)
+        if (settings.isOpen) settings.refresh()
+    }
+
+    /**
+     * GlassOS Manager changed the lock (see [ManagerProvider]). Turned off, a code prompt on screen could never be
+     * answered, so it closes. Main thread.
+     */
+    fun lockChangedElsewhere(off: Boolean) {
+        if (released) return
+        if (off && appMenu.asksCode) appMenu.close()
+        redrawLocks()
+    }
+
+    /** GlassOS Manager set or cleared the sun times place (see [ManagerProvider]): what a minute tick does, now. Main thread. */
+    fun sunPlaceChanged() {
+        if (released) return
+        updateTime()
+        if (::settings.isInitialized) settings.refresh()
+    }
+
+    /** Runs [open] at once, or for a locked app once its code is right; the app then stays open while in front. */
+    private fun unlockThen(pkg: String, open: () -> Unit) {
+        if (pkg !in AppLock.locked || prefs.lockCode.isEmpty()) { open(); return }
+        askCode("${labelOf(pkg)} is locked", "Enter the code with your remote.") {
+            AppLock.session.unlock(pkg, System.currentTimeMillis())
+            open()
+        }
+    }
+
+    /** Asks for the lock code; [then] runs once it is right. Wrong codes in a row lead to a short wait. */
+    private fun askCode(heading: String, text: String, then: () -> Unit) {
+        val wait = AppLock.tries.waitMs(SystemClock.elapsedRealtime())
+        if (wait > 0) { card(heading, ok, AppLock.waitText(wait)); return }
+        card(heading, emptyList(), text, code = { entered ->
+            when {
+                LockCode.matches(prefs.lockCode, entered) -> { AppLock.tries.pass(); appMenu.close(); then() }
+                AppLock.tries.fail(SystemClock.elapsedRealtime()) -> card(heading, ok, AppLock.waitText(LockCode.WAIT_MS))
+                else -> appMenu.rejectCode("Wrong code. Try again.")
+            }
+        })
+    }
+
+    /** A new code, entered twice; [then] runs once it is saved. */
+    private fun chooseCode(then: () -> Unit) {
+        card("Choose a lock code", emptyList(), "Press ${LockCode.LENGTH} buttons on your remote: the arrows, Rewind, " +
+            "Play/\u2060Pause or Fast forward, in any order. A button can repeat.", code = { first ->
+            card("Enter the code again", emptyList(), "Press the same ${LockCode.LENGTH} buttons.", code = { second ->
+                if (second != first) card("The codes did not match", listOf("Try again" to { chooseCode(then) }, "Cancel" to {}),
+                    "No code was saved.")
+                else { AppLock.setCode(ctx, prefs, first); appMenu.close(); then() }
+            })
+        })
+    }
+
+    private fun permissionItems(): List<Pair<String, () -> Unit>> =
+        if (ctx is Activity) listOf("OK" to {}, "Permissions" to { openSetup(SetupView.Step.PERMISSIONS, single = true) }) else ok
+
+    /** Settings > App lock: choose the code, or with it change it or turn the lock off (every app unlocked). */
+    fun appLockSettings() {
+        if (prefs.lockCode.isEmpty()) {
+            card("App lock", listOf("Choose a code" to {
+                chooseCode { Toast.makeText(ctx, "Code saved. Hold OK on an app and choose Lock app.", Toast.LENGTH_LONG).show() }
+            }, "Cancel" to {}), "Hold OK on an app and choose Lock app. It then needs a code of remote buttons to open.")
+            return
+        }
+        askCode("App lock", "Enter your lock code.") {
+            val n = AppLock.locked.count { p -> apps.any { it.pkg == p } }
+            val status = (if (n == 1) "1 app is locked." else "$n apps are locked.") + " Hold OK on an app to lock or unlock it."
+            val guard = if (AppLockGuard.available(ctx)) " Locked apps also need the code when cast to or opened by Alexa."
+                else " Casting, Alexa and remote buttons can still open them: allow Usage access and Display over other apps."
+            val items = arrayListOf<Pair<String, () -> Unit>>(
+                "Change code" to { chooseCode { Toast.makeText(ctx, "Lock code changed", Toast.LENGTH_SHORT).show() } },
+                "Turn off app lock" to {
+                    AppLock.turnOff(ctx, prefs)
+                    redrawLocks()
+                    syncOther()
+                    Toast.makeText(ctx, "App lock is off. Every app opens without a code.", Toast.LENGTH_LONG).show()
+                })
+            if (!AppLockGuard.available(ctx) && ctx is Activity) items.add("Permissions" to { openSetup(SetupView.Step.PERMISSIONS, single = true) })
+            items.add("Done" to {})
+            card("App lock", items, status + guard)
+        }
+    }
+
     // ---------- Scenery ----------
 
-    fun sceneChoice(): SceneChoice {
-        val cal = java.util.Calendar.getInstance()
-        val minute = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
-        val collection = if (prefs.sceneCollection == "scheduled") SceneSchedule.at(AerialStore.schedule, minute) else prefs.sceneCollection
-        return SceneChoice(prefs.sceneFavorites, prefs.sceneHidden, prefs.sceneFavoritesOnly, prefs.sceneShuffle, collection)
-    }
+    fun sceneChoice(): SceneChoice = sceneChoice(prefs)
     fun chooseCollection() {
         card("Scenery collection", SceneCollections.modes.map { id -> SceneCollections.label(id) to {
             prefs.sceneCollection = id; applySceneChoice(); if (browser.isOpen) browser.refresh()
-        } }, "Scheduled follows the daily rhythm saved in GlassOS Manager, using this TV’s local time. An empty collection plays your other visible scenes.")
+        } }, "Scheduled follows the daily rhythm saved in GlassOS Manager, using this TV’s local time; entries there can also " +
+            "follow sunrise or sunset (Settings > Sun times). An empty collection plays your other visible scenes.")
     }
     fun sceneLibrary(): List<AerialClip> = aerialClips
     fun currentScene(): AerialClip? = aerial.current()
@@ -1370,8 +1512,17 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     /** The scene's name for a few seconds (also in cinema mode); while the Top Shelf is focused, with the keys to use. */
     private fun showSceneName(clip: AerialClip) {
         if (currentRow != 0 || !resumed || setup.isOpen) return
-        if (hero.isFocused) sceneLabel.show(clip.name, SCENE_HINT, 0)
-        else if (prefs.sceneLabels) sceneLabel.show(clip.name, null, SCENE_LABEL_MS)
+        if (hero.isFocused) sceneLabel.show(clip.name, SCENE_HINT, 0, labelCorner())
+        else if (prefs.sceneLabels) sceneLabel.show(clip.name, null, SCENE_LABEL_MS, labelCorner())
+    }
+
+    /** The scene name's corner: clear of the cinema clock while it shows (see [CinemaPosition.labelCorner]). */
+    private fun labelCorner() = CinemaPosition.labelCorner(if (cinema && prefs.cinemaClock) cinemaClock.corner else null)
+
+    /** The scene name leaves its corner: with the Top Shelf focused it moves to [at] with the keys, otherwise it goes. */
+    private fun moveSceneName(at: Int, instant: Boolean) {
+        val clip = if (sceneLabel.shown && hero.isFocused) aerial.current() else null
+        if (clip != null) sceneLabel.show(clip.name, SCENE_HINT, 0, at) else sceneLabel.hide(instant)
     }
 
     fun openSceneBrowser(fromSettings: Boolean = false) {
@@ -1600,6 +1751,9 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         val f = cinemaFocus
         cinemaFocus = null
         if (f != null && f !== focused() && f.isAttachedToWindow && f.isShown) f.requestFocus()
+        // A name moved out of the clock's way would sit on the returning app rows: it goes, or returns to the top left
+        // while the Top Shelf is focused.
+        if (sceneLabel.corner != 0) moveSceneName(0, instant)
         syncIdle()
     }
 
@@ -1629,10 +1783,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     /** Dims the scenery and the grid inside the user's night window (local time). Launcher UI only: never the TV's brightness. */
     fun applyNight() {
         if (!::nightDim.isInitialized) return
-        val cal = java.util.Calendar.getInstance()
-        val minute = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
-        val on = prefs.nightEnabled && NightSchedule(prefs.nightStart, prefs.nightEnd).isNight(minute)
-        val a = NIGHT_ALPHA[prefs.nightLevel.coerceIn(0, NIGHT_ALPHA.size - 1)]
+        val a = nightAlpha(prefs)
+        val on = a > 0f
         if (on == nightOn && (!on || nightLevelShown == a)) return
         nightOn = on
         nightLevelShown = a
@@ -1641,16 +1793,72 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         WLog.i("night ${if (on) "on" else "off"}")
     }
 
+    /** Today's sun times for Settings, such as "Sunset +30 · 6:42 PM", or the clock time used instead. */
+    fun nightValue(start: Boolean): String {
+        val h24 = android.text.format.DateFormat.is24HourFormat(ctx)
+        val fixed = if (start) prefs.nightStart else prefs.nightEnd
+        if (!prefs.nightSun) return NightSchedule.format(fixed, h24)
+        val anchor = if (start) "sunset" else "sunrise"
+        val offset = if (start) prefs.nightStartOffset else prefs.nightEndOffset
+        val day = SunNow.today(prefs)
+        val window = NightSchedule.resolve(true, prefs.nightStart, prefs.nightEnd, prefs.nightStartOffset, prefs.nightEndOffset, day)
+        // The sun's window or none: a polar day, or offsets that leave no night or no day, keep the whole clock window,
+        // as applyNight does.
+        val sunTimes = NightSchedule.sunWindow(prefs.nightStartOffset, prefs.nightEndOffset, day) != null
+        val time = NightSchedule.format(if (start) window.start else window.end, h24)
+        return NightSchedule.formatOffset(anchor, offset) + if (sunTimes) " \u00B7 $time" else " \u00B7 uses $time"
+    }
+
+    /** Settings > Sun times: where they come from and today's times. */
+    fun sunTimesInfo() {
+        val place = SunNow.place(prefs)
+        val day = SunNow.today(prefs)
+        val h24 = android.text.format.DateFormat.is24HourFormat(ctx)
+        val rise = day?.minute("sunrise", 0)
+        val set = day?.minute("sunset", 0)
+        val today = when {
+            place == null -> "Sun times are unavailable: this TV\u2019s time zone (${java.util.TimeZone.getDefault().id}) has no place " +
+                "to work them out from. Night mode and the daily rhythm use their clock times."
+            day?.polar == "up" -> "The sun does not set here today, so Night mode and the daily rhythm use their clock times."
+            day?.polar == "down" -> "The sun does not rise here today, so Night mode and the daily rhythm use their clock times."
+            rise != null && set != null -> "Today: sunrise ${NightSchedule.format(rise, h24)}, sunset ${NightSchedule.format(set, h24)}."
+            else -> "Sun times are unavailable today."
+        }
+        val source = when (place?.source) {
+            "manager" -> "Worked out for ${place.label.ifEmpty { "the place" }} set in GlassOS Manager. To change it, use GlassOS " +
+                "Manager > Daily rhythm on your Mac."
+            "timezone" -> "Estimated for ${place.label}, from this TV\u2019s time zone, so they can be off by an hour or more. " +
+                "For exact times, set your place in GlassOS Manager > Daily rhythm on your Mac."
+            else -> "To use sun times, set your place in GlassOS Manager > Daily rhythm on your Mac."
+        }
+        card("Sun times", listOf("OK" to {}), "$today\n\n$source")
+    }
+
+    // ---------- Screensaver ----------
+
+    /**
+     * Settings > Screensaver: whether the TV shows this scenery when idle, and a preview. GlassOS cannot choose its own
+     * screensaver (that needs a protected setting); GlassOS Manager does it over ADB.
+     */
+    fun screensaverInfo() {
+        val text = if (AerialDream.chosen(ctx)) "Your scenery plays when the TV is idle in any app. It does not start while a video is playing."
+            else "To show your scenery when the TV is idle, choose Use GlassOS scenery in GlassOS Manager > TV controls on " +
+                "your Mac." + (if (Platform.isFireTv(ctx)) " If it turns Amazon\u2019s Ambient Experience off, restart the TV once." else "")
+        val items = ArrayList<Pair<String, () -> Unit>>()
+        // From MainActivity only: the overlay after Home hands launches to the app it waits for.
+        if (ctx is Activity) items.add("Preview" to { host.startApp(Intent(ctx, ScreensaverPreview::class.java), ctx.packageName, null) })
+        items.add("OK" to {})
+        card("Screensaver", items, text)
+    }
+
     // ---------- Settings applied at once, backups ----------
 
     private fun positionCinemaClock() {
         if (!::cinemaClock.isInitialized) return
-        val corner = CinemaPosition.corner(android.os.SystemClock.elapsedRealtime() / 60000L, prefs.movingClock)
-        val vertical = if (corner < 2) Gravity.TOP else Gravity.BOTTOM
-        val horizontal = if (corner == 0 || corner == 3) Gravity.LEFT else Gravity.RIGHT
-        cinemaClock.layoutParams = FrameLayout.LayoutParams(-2, -2, vertical or horizontal).apply {
-            setMargins(sw * 64 / 1920, sh * 48 / 1080, sw * 64 / 1920, sh * 48 / 1080)
-        }
+        cinemaClock.place(prefs.movingClock)
+        // The clock (already showing) moved into the scene name's corner: the name makes way at once.
+        if (cinema && prefs.cinemaClock && cinemaClock.visibility == View.VISIBLE && sceneLabel.corner == cinemaClock.corner)
+            moveSceneName(labelCorner(), instant = true)
     }
 
     /** Display settings changed (effects, night, cinema): apply them now. */
@@ -1694,7 +1902,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     private fun writeBackup() {
         background {
             val result: Any = try {
-                Backup.write(ctx, BackupCodec.encode(prefs.toBackup(), BuildConfig.VERSION_NAME, System.currentTimeMillis()))
+                Backup.write(ctx, BackupCodec.encode(prefs.toBackup(ScreenMirroring.available(ctx)), BuildConfig.VERSION_NAME,
+                    System.currentTimeMillis()))
             } catch (e: Exception) { e }
             ui {
                 if (result is Backup.Saved) {
@@ -1732,10 +1941,15 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             ui {
                 when (r) {
                     is BackupResult.Error -> card("Cannot restore this backup", ok, f.name + "\n\n" + r.message)
-                    is BackupResult.Ok -> card("Restore this backup?", listOf("Cancel" to {}, "Restore" to { restore(r.data) }),
-                        f.name + (if (r.exportedAt.isNotEmpty()) "\nMade ${r.exportedAt.replace('T', ' ').removeSuffix("Z")} UTC" else "") +
-                            "\n\nReplaces: ${r.data.summary()}.\nApps and scenes not on this TV are kept for later. Your name, TMDB key, " +
-                            "permissions and home settings stay as they are.")
+                    is BackupResult.Ok -> {
+                        // Without Screen Mirroring here, its section is neither named nor restored.
+                        val d = r.data.forThisTv(ScreenMirroring.available(ctx))
+                        val warning = d.mirroringWarning(prefs.airplayOn, prefs.airplayConfig.pin)
+                        card("Restore this backup?", listOf("Cancel" to {}, "Restore" to { restore(d) }),
+                            f.name + (if (r.exportedAt.isNotEmpty()) "\nMade ${r.exportedAt.replace('T', ' ').removeSuffix("Z")} UTC" else "") +
+                                "\n\nReplaces: ${d.summary()}.\nApps and scenes not on this TV are kept for later. Your name, TMDB key, " +
+                                "permissions and home settings stay as they are." + if (warning != null) "\n\n$warning" else "")
+                    }
                 }
             }
         }
@@ -1745,6 +1959,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         // commit() changes the settings in memory even when writing them to storage fails: show what is in use either way.
         val saved = prefs.apply(d)
         reloadAll()
+        if (d.mirroring != null) ScreenMirroring.restored(ctx, prefs)
         if (saved) card("Settings restored", ok, d.summary().replaceFirstChar { it.uppercase() } + ".")
         else card("Restored, but not saved", ok, "The restored settings are in use now, but they could not be written to " +
             "storage, so GlassOS may go back to the earlier settings when it restarts. Choose Restore from backup again to retry.")
@@ -1956,9 +2171,31 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     companion object {
         const val COLS = 6
         private const val SCENE_HINT = "Left or Right: change scene  \u00B7  OK: Scenery"
-        /** Night mode's dark layer at each level (low, medium, strong). */
-        private val NIGHT_ALPHA = floatArrayOf(0.28f, 0.42f, 0.56f)
         private const val REQ_WRITE = 9
-        private const val SCENE_LABEL_MS = 5000L
+        /** How long a new scene's name shows (the home and the screensaver). */
+        const val SCENE_LABEL_MS = 5000L
+
+        private fun minuteNow(): Int {
+            val cal = java.util.Calendar.getInstance()
+            return cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
+        }
+
+        /**
+         * The scenery choice now. The home and the screensaver both make it here: they share one play order, and a
+         * different choice from either would change the clip under the other.
+         */
+        fun sceneChoice(prefs: Prefs): SceneChoice {
+            val schedule = AerialStore.schedule
+            val sun = if (prefs.sceneCollection == "scheduled" && schedule.any { it.anchor != null }) SunNow.today(prefs) else null
+            return SceneChoice.of(prefs.sceneFavorites, prefs.sceneHidden, prefs.sceneFavoritesOnly, prefs.sceneShuffle,
+                prefs.sceneCollection, schedule, sun, minuteNow())
+        }
+
+        /** Night mode's dark layer now (0 when it is off or outside its window), for the home and the screensaver. */
+        fun nightAlpha(prefs: Prefs): Float {
+            val sun = if (prefs.nightEnabled && prefs.nightSun) SunNow.today(prefs) else null
+            val window = NightSchedule.resolve(prefs.nightSun, prefs.nightStart, prefs.nightEnd, prefs.nightStartOffset, prefs.nightEndOffset, sun)
+            return NightSchedule.dimAlpha(prefs.nightEnabled, window, prefs.nightLevel, minuteNow())
+        }
     }
 }

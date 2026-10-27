@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Screen Mirroring. User-facing text never calls it a server of the protocol or names a protocol version (see
+     docs/SCREEN-MIRRORING.md and THIRD_PARTY_NOTICES.md). -->
+<resources>
+    <string name="mirroring_channel">Screen Mirroring</string>
+    <string name="mirroring_title">Screen Mirroring</string>
+    <string name="mirroring_starting">Starting…</string>
+    <string name="mirroring_ready">Ready as “%1$s”</string>
+    <!-- Never the code itself: notification listeners and dumpsys can read this text. -->
+    <string name="mirroring_code_asked">A device is asking for a code. It is on the TV screen.</string>
+    <string name="mirroring_previous">Previous</string>
+    <string name="mirroring_play_pause">Play or pause</string>
+    <string name="mirroring_next">Next</string>
+</resources>

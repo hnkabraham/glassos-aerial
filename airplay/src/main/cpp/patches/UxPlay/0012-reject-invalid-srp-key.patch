@@ -1,0 +1,26 @@
+diff --git a/lib/pairing.c b/lib/pairing.c
+index c83200e..e983100 100644
+--- a/lib/pairing.c
++++ b/lib/pairing.c
+@@ -13,6 +13,8 @@
+  *  Lesser General Public License for more details.
+  *==================================================================
+  * modified by fduncanh 2021, 2023
++ * Modified in 2026 by GlassOS Aerial; see patches/UxPlay/ and THIRD_PARTY_NOTICES.md
++ * for what changed and when.
+  */
+ 
+ #include <stdlib.h>
+@@ -570,6 +572,12 @@ srp_validate_proof(pairing_session_t *session, pairing_t *pairing, const unsigne
+                                                     A, len_A,
+                                                     b, len_b,
+                                                     &B, &len_B, NULL, NULL, 1);
++    if (verifier == NULL) {
++        /* GlassOS: no verifier (an A longer than N, A mod N = 0, or no memory) is a failed proof, not a crash */
++        free (session->srp);
++        session->srp = NULL;
++        return -1;
++    }
+ 
+     srp_verifier_verify_session(verifier, proof, &M2);
+     authenticated = srp_verifier_is_authenticated(verifier);

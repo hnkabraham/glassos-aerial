@@ -1,0 +1,84 @@
+diff --git a/lib/airplay_video.c b/lib/airplay_video.c
+index 6f0d797..c230081 100644
+--- a/lib/airplay_video.c
++++ b/lib/airplay_video.c
+@@ -12,6 +12,9 @@
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  * Lesser General Public License for more details.
+  *
++ * Modified in 2026 by jqssun (android-airplay-server, patches 0001-0009)
++ * and by GlassOS Aerial; see patches/UxPlay/ and THIRD_PARTY_NOTICES.md
++ * for what changed and when.
+  */
+ 
+ // it should only start and stop the media_data_store that handles all HLS transactions, without
+diff --git a/lib/airplay_video.h b/lib/airplay_video.h
+index 77fdcb0..a5cb138 100644
+--- a/lib/airplay_video.h
++++ b/lib/airplay_video.h
+@@ -12,6 +12,9 @@
+  * Lesser General Public License for more details.
+  *
+  *=================================================================
++ * Modified in 2026 by jqssun (android-airplay-server, patches 0001-0009)
++ * and by GlassOS Aerial; see patches/UxPlay/ and THIRD_PARTY_NOTICES.md
++ * for what changed and when.
+   */
+ 
+ #ifndef AIRPLAY_VIDEO_H
+diff --git a/lib/http_handlers.h b/lib/http_handlers.h
+index 586f61e..c19a9f6 100644
+--- a/lib/http_handlers.h
++++ b/lib/http_handlers.h
+@@ -12,6 +12,9 @@
+  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+  * Lesser General Public License for more details.
+  *
++ * Modified in 2026 by jqssun (android-airplay-server, patches 0001-0009)
++ * and by GlassOS Aerial; see patches/UxPlay/ and THIRD_PARTY_NOTICES.md
++ * for what changed and when.
+  */
+ 
+ /* this file is part of raop.c and should not be included in any other file */
+diff --git a/lib/raop.c b/lib/raop.c
+index 07564e1..79810a5 100644
+--- a/lib/raop.c
++++ b/lib/raop.c
+@@ -12,6 +12,9 @@
+  *
+  *===================================================================
+  * modified by fduncanh 2021-23
++ * Modified in 2026 by jqssun (android-airplay-server, patches 0001-0009)
++ * and by GlassOS Aerial; see patches/UxPlay/ and THIRD_PARTY_NOTICES.md
++ * for what changed and when.
+  */
+ 
+ #include <stdlib.h>
+diff --git a/lib/raop.h b/lib/raop.h
+index ac7b69c..84cc4c7 100644
+--- a/lib/raop.h
++++ b/lib/raop.h
+@@ -13,6 +13,9 @@
+  *
+  *===================================================================
+  * modified by fduncanh 2021-25
++ * Modified in 2026 by jqssun (android-airplay-server, patches 0001-0009)
++ * and by GlassOS Aerial; see patches/UxPlay/ and THIRD_PARTY_NOTICES.md
++ * for what changed and when.
+  */
+ 
+ #ifndef RAOP_H
+diff --git a/lib/raop_handlers.h b/lib/raop_handlers.h
+index b3f3b17..dd61fe8 100644
+--- a/lib/raop_handlers.h
++++ b/lib/raop_handlers.h
+@@ -13,6 +13,9 @@
+  *
+  *===================================================================
+  * modfied by fduncanh 2021-2023
++ * Modified in 2026 by jqssun (android-airplay-server, patches 0001-0009)
++ * and by GlassOS Aerial; see patches/UxPlay/ and THIRD_PARTY_NOTICES.md
++ * for what changed and when.
+  */
+ 
+ /* This file should be only included from raop.c as it defines static handler

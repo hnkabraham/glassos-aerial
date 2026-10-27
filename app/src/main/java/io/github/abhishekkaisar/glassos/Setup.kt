@@ -23,6 +23,8 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import io.github.abhishekkaisar.glassos.airplay.AirPlay
+import io.github.abhishekkaisar.glassos.airplay.AirPlayConfig
 import java.io.File
 import java.util.Locale
 
@@ -34,7 +36,7 @@ private const val REQ_HOME = 8
  * also open from Settings ([open] with single = true).
  */
 class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
-    enum class Step { WELCOME, NAME, PHOTO, COUNTRY, APPS, PERMISSIONS, HOME, DONE, TMDB_KEY, ABOUT, HIDDEN }
+    enum class Step { WELCOME, NAME, PHOTO, COUNTRY, APPS, PERMISSIONS, HOME, DONE, TMDB_KEY, ABOUT, HIDDEN, MIRROR_NAME, LICENCES }
 
     /** Fire TV cannot change its home app, so the home step is for Android TV and Google TV only. */
     private val fireTv = Platform.isFireTv(context)
@@ -73,6 +75,13 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
     private val picked = ArrayList<String>()
     private val hidden = HashSet<String>()
     private var keyText = ""
+    private var mirrorName = ""
+    /** The licence file open in the reader (About > Open-source licences), or null for the list. */
+    private var licence: String? = null
+    /** Back from the reader: the licence whose row the list focuses again, as Settings does with its rows. */
+    private var licenceBack: String? = null
+    /** Back from the licence list: About focuses its Open-source licences button rather than Close. */
+    private var fromLicences = false
 
     init {
         visibility = View.GONE
@@ -102,6 +111,10 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
         picked.clear()
         picked.addAll(prefs.dock ?: AppRepo.defaultDock(HomeShare.apps ?: emptyList()))
         keyText = prefs.tmdbKey
+        mirrorName = prefs.airplayConfig.name
+        licence = null
+        licenceBack = null
+        fromLicences = false
         hidden.clear()
         hidden.addAll(prefs.hidden)
         isOpen = true
@@ -125,6 +138,12 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
 
     /** Back: the previous step, or closes a single step without saving. The first step stays. */
     fun back() {
+        // The licence reader goes back to its list, the list to About, each with the row it came from focused.
+        if (step == Step.LICENCES) {
+            if (licence != null) { licenceBack = licence; licence = null; show(Step.LICENCES) }
+            else { fromLicences = true; show(Step.ABOUT) }
+            return
+        }
         if (single) { close(); return }
         val i = flow.indexOf(step)
         if (i > 0) show(flow[i - 1])
@@ -156,6 +175,11 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
             Step.APPS -> if (picked.isNotEmpty()) { prefs.dock = picked.toList(); home.reloadProfile(); if (single) home.refetchTopShelf() }
             Step.TMDB_KEY -> { prefs.tmdbKey = keyText; home.refetchTopShelf() }
             Step.HIDDEN -> if (hidden != prefs.hidden) { prefs.hidden = hidden.toSet(); home.reloadDock() }
+            Step.MIRROR_NAME -> {
+                // Empty: the TV's own name. An unchanged name restarts nothing.
+                val n = AirPlayConfig.cleanName(mirrorName)
+                if (n != prefs.airplayConfig.name) ScreenMirroring.set(context, prefs, AirPlayConfig.NAME, n.ifEmpty { null })
+            }
             else -> {}
         }
     }
@@ -164,7 +188,7 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
         step = s
         // Steps with a scrolling list clip to the body, or the list draws over the buttons; the others leave room
         // for focus scaling.
-        body.clipChildren = s == Step.COUNTRY || s == Step.APPS || s == Step.HIDDEN
+        body.clipChildren = s == Step.COUNTRY || s == Step.APPS || s == Step.HIDDEN || s == Step.LICENCES
         body.removeAllViews()
         nav.removeAllViews()
         val i = flow.indexOf(s)
@@ -183,11 +207,13 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
             Step.TMDB_KEY -> keyStep()
             Step.ABOUT -> aboutStep()
             Step.HIDDEN -> hiddenStep()
+            Step.MIRROR_NAME -> mirrorNameStep()
+            Step.LICENCES -> if (licence == null) licencesStep() else licenceText(licence!!)
         }
         invalidateDeep(panel)
     }
 
-    private fun navButton(label: String, primary: Boolean = false, click: () -> Unit): RowView {
+    private fun navButton(label: String, primary: Boolean = false, width: Float = 164f, click: () -> Unit): RowView {
         val b = RowView(context, label).apply {
             id = View.generateViewId()
             titleView.gravity = Gravity.CENTER
@@ -195,7 +221,7 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
             if (primary) titleView.typeface = Fonts.medium
             onClick = click
         }
-        nav.addView(b, LinearLayout.LayoutParams(dpi(164f), dpi(46f)).apply { leftMargin = dpi(8f); rightMargin = dpi(8f) })
+        nav.addView(b, LinearLayout.LayoutParams(dpi(width), dpi(46f)).apply { leftMargin = dpi(8f); rightMargin = dpi(8f) })
         return b
     }
 
@@ -245,6 +271,27 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
         val kb = Keyboard(context, digits = true, capitalise = false) { k ->
             keyText = edit(keyText, k, 400, allowSpace = false)
             field.value = keyText
+        }
+        box.addView(kb, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dpi(12f) })
+        body.addView(box, LayoutParams(-1, -2, Gravity.CENTER))
+        navButton("Cancel") { back() }
+        val go = navButton("Save", primary = true) { next() }
+        kb.firstKey()?.requestFocus()
+        kb.downTo(go)
+    }
+
+    /** Settings > Screen Mirroring > TV name: what senders list this TV as. Empty is the TV's own name. */
+    private fun mirrorNameStep() {
+        val tvName = AirPlayConfig.cleanName(AirPlay.defaultName(context)).ifEmpty { AirPlayConfig.FALLBACK_NAME }
+        title.text = "Screen Mirroring name"
+        subtitle.text = "The name iPhone, iPad and Mac list for this TV. Leave it empty to use the TV\u2019s own name, \u201C$tvName\u201D."
+        val box = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; clipChildren = false; clipToPadding = false }
+        val field = Field(context, tvName)
+        field.value = mirrorName
+        box.addView(field, LinearLayout.LayoutParams(dpi(520f), dpi(46f)))
+        val kb = Keyboard(context, digits = false) { k ->
+            mirrorName = edit(mirrorName, k, AirPlayConfig.MAX_NAME_BYTES)
+            field.value = mirrorName
         }
         box.addView(kb, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dpi(12f) })
         body.addView(box, LayoutParams(-1, -2, Gravity.CENTER))
@@ -488,7 +535,8 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
     private fun refreshGrants() {
         for ((g, r) in grantRows) {
             val ok = g.isGranted(context)
-            r.valueView.text = if (ok) "✓  " + g.why else g.why
+            val why = Grants.why(context, g)
+            r.valueView.text = if (ok) "✓  $why" else why
             r.valueView.setTextColor(if (ok) 0xFF7CE38B.toInt() else 0x99FFFFFF.toInt())
         }
     }
@@ -674,21 +722,108 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
 
     private fun aboutStep() {
         title.text = "About GlassOS Aerial"
-        subtitle.text = "Version ${BuildConfig.VERSION_NAME}. GlassOS Aerial is a fork of GlassOS by Abhishek Kaisar " +
-            "(github.com/AbhishekKaisar/glassos-tv), with local aerial scenery, folders and backups. Free software under the GNU GPL v3. Inspired by tvOS."
+        subtitle.text = "Version ${BuildConfig.VERSION_NAME}. A fork of GlassOS by Abhishek Kaisar (github.com/AbhishekKaisar/glassos-tv), " +
+            "with local aerial scenery, folders and backups. Free software: you may redistribute it under the GNU GPL v3. Inspired by tvOS."
+        // A build with the receiver has one more line: the gaps close up a little so everything fits above the buttons.
+        val mirroring = AirPlay.isBundled(context)
+        val gap = dpi(if (mirroring) 7f else 12f)
         val box = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
         box.addView(ImageView(context).apply { setImageResource(R.drawable.tmdb_logo); scaleType = ImageView.ScaleType.FIT_CENTER },
-            LinearLayout.LayoutParams(dpi(150f), dpi(44f)))
+            LinearLayout.LayoutParams(dpi(150f), dpi(if (mirroring) 32f else 44f)))
         box.addView(text("This product uses the TMDB API but is not endorsed or certified by TMDB.", 15f).apply { gravity = Gravity.CENTER },
-            LinearLayout.LayoutParams(-1, -2).apply { topMargin = dpi(12f) })
+            LinearLayout.LayoutParams(-1, -2).apply { topMargin = gap })
         box.addView(text("Top Shelf: ${HeroRepo.sourceLabel(prefs.topShelf)}. Titles and images come from TMDB; streaming availability from TMDB's watch provider data (JustWatch).", 14f, 0xB3FFFFFF.toInt()).apply { gravity = Gravity.CENTER },
-            LinearLayout.LayoutParams(-1, -2).apply { topMargin = dpi(12f) })
-        box.addView(text("Not affiliated with or endorsed by Google, Amazon or Apple. Android TV and Google TV are trademarks of Google LLC; " +
-            "Fire TV is a trademark of Amazon.com, Inc.", 13f, 0x99FFFFFF.toInt()).apply { gravity = Gravity.CENTER },
-            LinearLayout.LayoutParams(-1, -2).apply { topMargin = dpi(12f) })
+            LinearLayout.LayoutParams(-1, -2).apply { topMargin = gap })
+        // A build without the receiver's native code carries none of its components.
+        if (mirroring) box.addView(text("Screen Mirroring uses UxPlay, jqssun\u2019s Android receiver, libplist, OpenSSL and Oboe: " +
+            "see Open-source licences.", 13f, 0xB3FFFFFF.toInt()).apply { gravity = Gravity.CENTER },
+            LinearLayout.LayoutParams(-1, -2).apply { topMargin = gap })
+        // Two lines at most, clear of the buttons.
+        box.addView(text("Not affiliated with Google, Amazon or Apple. Android TV and Google TV are trademarks of Google LLC; " +
+            "Fire TV of Amazon.com, Inc.; AirPlay, iPhone, iPad and Mac of Apple Inc.", 13f, 0x99FFFFFF.toInt()).apply { gravity = Gravity.CENTER },
+            LinearLayout.LayoutParams(-1, -2).apply { topMargin = gap })
         body.addView(box, LayoutParams(-1, -2, Gravity.CENTER))
-        navButton("Close", primary = true) { close() }.requestFocus()
+        val licences = navButton("Open-source licences", width = 250f) { licence = null; show(Step.LICENCES) }
+        val close = navButton("Close", primary = true) { close() }
+        (if (fromLicences) licences else close).requestFocus()
+        fromLicences = false
     }
+
+    // ---------- Open-source licences (About) ----------
+
+    /** The licence texts the APK carries in assets/licenses, every file there, the notices first. */
+    private fun licencesStep() {
+        title.text = "Open-source licences"
+        subtitle.text = "GlassOS Aerial and the components it includes. Choose one to read it."
+        val files = try { context.assets.list(Licences.DIR)?.toList() ?: emptyList() } catch (e: Exception) { emptyList() }
+        val sorted = Licences.order(files)
+        val scroll = ScrollView(context).apply { isVerticalScrollBarEnabled = false; overScrollMode = View.OVER_SCROLL_NEVER; clipChildren = true }
+        val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        list.setPadding(dpi(6f), dpi(4f), dpi(6f), dpi(4f))
+        scroll.addView(list, ViewGroup.LayoutParams(-1, -2))
+        body.addView(scroll, LayoutParams(dpi(520f), -1, Gravity.CENTER_HORIZONTAL))
+        if (Build.VERSION.SDK_INT >= 23) scroll.setOnScrollChangeListener { _, _, _, _, _ -> invalidateDeep(list) }
+        var first: View? = null
+        for (f in sorted) {
+            val r = RowView(context, Licences.title(f)).apply { id = View.generateViewId() }
+            r.valueView.text = f
+            r.valueView.textSize = 14f
+            r.onClick = { licence = f; show(Step.LICENCES) }
+            list.addView(r, LinearLayout.LayoutParams(-1, dpi(46f)).apply { bottomMargin = dpi(4f) })
+            // Back from a licence: its row again (the scroll brings it into view), else the first.
+            if (first == null || f == licenceBack) first = r
+        }
+        licenceBack = null
+        if (sorted.isEmpty()) body.addView(text("This build has no licence files.", 15f).apply { gravity = Gravity.CENTER }, LayoutParams(-1, -2, Gravity.CENTER))
+        val done = navButton("Back", primary = true) { back() }
+        (first ?: done).requestFocus()
+    }
+
+    /** One licence text, read off the UI thread; Up and Down scroll it, Fast forward and Rewind turn a page. */
+    private fun licenceText(f: String) {
+        title.text = Licences.title(f)
+        subtitle.text = "$f \u00B7 Up and Down scroll, Fast forward and Rewind turn a page."
+        val reader = object : ScrollView(context) {
+            override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
+                when (keyCode) {
+                    android.view.KeyEvent.KEYCODE_MEDIA_FAST_FORWARD, android.view.KeyEvent.KEYCODE_PAGE_DOWN -> { pageScroll(View.FOCUS_DOWN); return true }
+                    android.view.KeyEvent.KEYCODE_MEDIA_REWIND, android.view.KeyEvent.KEYCODE_PAGE_UP -> { pageScroll(View.FOCUS_UP); return true }
+                }
+                return super.onKeyDown(keyCode, event)
+            }
+        }.apply {
+            isVerticalScrollBarEnabled = true
+            overScrollMode = View.OVER_SCROLL_NEVER
+            isFocusable = true
+            isFocusableInTouchMode = true
+            clipChildren = true
+            id = View.generateViewId()
+        }
+        val textView = text("", 14f, 0xE6FFFFFF.toInt()).apply { setPadding(dpi(18f), 0, dpi(18f), 0); setLineSpacing(0f, 1.1f) }
+        reader.addView(textView, ViewGroup.LayoutParams(-1, -2))
+        // The text scrolls inside the field's rounded edge, not over it.
+        reader.setPadding(0, dpi(12f), 0, dpi(12f))
+        reader.clipToPadding = true
+        // A faint glass field, a little brighter while it has focus.
+        val field = android.graphics.drawable.GradientDrawable().apply { cornerRadius = dp(16f); setColor(0x14FFFFFF) }
+        reader.background = field
+        reader.setOnFocusChangeListener { _, has -> field.setColor(if (has) 0x24FFFFFF else 0x14FFFFFF) }
+        if (Build.VERSION.SDK_INT >= 23) reader.setOnScrollChangeListener { _, _, _, _, _ -> invalidateDeep(reader) }
+        body.addView(reader, LayoutParams(-1, -1))
+        val done = navButton("Back", primary = true) { back() }
+        reader.nextFocusDownId = done.id
+        reader.requestFocus()
+        home.background {
+            val t = try { Licences.text(f, context.assets.open("${Licences.DIR}/$f").bufferedReader(Charsets.UTF_8).use { it.readText() }) }
+                catch (e: Exception) { "This licence could not be read (${e.javaClass.simpleName})." }
+            ui.post {
+                if (!isOpen || step != Step.LICENCES || licence != f) return@post
+                textView.text = t
+                invalidateDeep(panel)
+            }
+        }
+    }
+
 
     // ---------- Small views ----------
 

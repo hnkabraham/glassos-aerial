@@ -16,9 +16,14 @@ Based on GlassOS v1.0.2-beta by **Abhishek Kaisar and contributors**. Their laun
 | Scenery catalog | Browse Aerial-compatible JSON feeds, download selected SDR videos, and compress them on the Mac. |
 | Themes & custom app art | Five lightweight glass palettes, custom image tiles and a cinema clock that changes corners each minute. |
 | Device profiles | Observed hardware/software, per-device health baselines and before/after configuration comparisons. |
-| Collections & daily rhythm | Filter scenery by place and switch collections throughout the day using the TV’s local clock. |
+| Collections & daily rhythm | Filter scenery by place and switch collections throughout the day using the TV’s local clock, sunrise or sunset. |
 | Playback recovery | Skip stalled clips, retry repaired files and refresh changed posters and titles. |
 | Uninstall from Home | Hold OK on an app, choose Uninstall, then confirm in the TV’s own dialog. Available in both app-order modes and inside folders. |
+| App lock | Hold OK on an app and choose Lock app. Opening it then needs a code of remote buttons; with Usage access and Display over other apps, also when it is cast to or opened by Alexa. [How it works](docs/USAGE.md#app-lock). |
+| Screensaver | Your scenery as the TV’s screensaver when it is idle in any app. Set and undone from the Mac manager. [How it works](docs/USAGE.md#screensaver). |
+| Sun times | Night mode and daily rhythm entries can follow sunset and sunrise, estimated from the TV’s time zone or for a place set from the Mac. [Details](docs/USAGE.md#sun-times). |
+| TV controls on the Mac | Set a new app lock code, turn the lock off or change the screensaver from the manager, over ADB. [Manager guide](manager/README.md#tv-controls). |
+| Screen Mirroring | Show an iPhone, iPad or Mac screen on the TV, compatible with AirPlay. Off until turned on in Settings or Control Center; optional PIN. Fire OS 6 / Android 7.1 or later; emulator-tested so far. [How it works](docs/SCREEN-MIRRORING.md). |
 | Most-used app order | Automatically ranks the top row, drawer and folder contents by recent foreground time. Manual mode restores your saved arrangement. |
 | Local aerial videos | Silent, hardware-decoded scenery behind the icons; releases the decoder when Home loses focus and resumes the saved position on return. |
 | Scenery browser | Poster thumbnails, next/previous, favourites, hidden scenes, scene names, and persistent shuffle without repeats. |
@@ -27,6 +32,8 @@ Based on GlassOS v1.0.2-beta by **Abhishek Kaisar and contributors**. Their laun
 | App folders | Create, name, reorder and edit folders in the top row or app drawer. |
 | Backup and restore | Portable JSON for your layout, folders, display settings and scenery choices. |
 | Lighter effects | Reduce transparency and motion for simpler panels and navigation. |
+
+**Hold OK > Lock app** locks an app behind a 4-button remote code (arrows, Rewind, Play/Pause, Fast forward). With Usage access and Display over other apps, a small background guard also covers the app whenever it comes to the front outside GlassOS, such as a phone casting to it or Alexa opening it (emulator-tested with a simulated outside launch). The code and locked list never go into backups. It is a launcher lock, not a security boundary: see the [limits](docs/USAGE.md#app-lock).
 
 **Settings > App order > Most used** enables automatic sorting. It uses the TV’s local Usage access, keeps usage history out of backups, and leaves Amazon’s privacy opt-outs unchanged. See [how the ranking works](docs/USAGE.md#most-used-app-order).
 
@@ -166,4 +173,4 @@ For a normal Android TV default-home setup, select another Home app first. Glass
 - **Feature references:** [Projectivy](https://github.com/spocky/miproja1) and [Arc](https://github.com/meddouribadis/arclauncher) informed the personalization ideas; [Aerial Views](https://github.com/theothernt/AerialViews) and [Aerial Community](https://github.com/AerialScreensaver/AerialCommunity) informed the feed workflow. These are independent implementations; their apps and media are not bundled.
 - **This fork:** local aerial playback and the controls documented here. File fork-specific issues in [our tracker](https://github.com/hnkabraham/glassos-aerial/issues).
 
-**GNU GPL v3.0** — see [LICENSE](LICENSE). Independent project; not affiliated with Amazon, Google or Apple. Fire TV, Android TV and Apple TV are their respective owners' trademarks. The optional TMDB integration is not endorsed or certified by TMDB; streaming availability data comes through TMDB/JustWatch.
+**GNU GPL v3.0** — see [LICENSE](LICENSE). Screen Mirroring includes UxPlay, libplist, OpenSSL and Oboe and code adapted from jqssun's Android receiver, each under its own licence ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)); release source bundles come from `tools/airplay/make_source_bundle.sh`. Independent project; not affiliated with Amazon, Google or Apple. Fire TV, Android TV, Apple TV, AirPlay, iPhone, iPad and Mac are their respective owners' trademarks; Screen Mirroring is compatible with AirPlay but not endorsed or certified by Apple. The optional TMDB integration is not endorsed or certified by TMDB; streaming availability data comes through TMDB/JustWatch.

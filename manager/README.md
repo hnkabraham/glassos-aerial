@@ -20,7 +20,7 @@ For foreground development, use `python3 manager/server.py --data-dir /path/to/p
 
 ## Devices and updates
 
-Add a name and the address shown in the Fire Stick's network settings. Enable ADB debugging and accept the authorization prompt on that TV. Every action targets the selected saved device; the manager does not scan your network or change Home routing.
+Add a name and the address shown in the Fire Stick's network settings. Enable ADB debugging and accept the authorization prompt on that TV. Every action targets the selected saved device; the manager does not scan your network or change Home routing. It changes the TV's own system settings only from [TV controls](#tv-controls), and only when you choose to: the screensaver settings listed there and GlassOS's Display over other apps permission. It never restarts the TV.
 
 **Check device** reads the installed GlassOS version, storage, native Home handler, five Amazon privacy values and four package-disable states. Instagram checks compare each installed APK with the private bundle's known blocker hashes. A missing app, unknown identity and verified blocker have different labels. Disabling Android packages does not prove native Amazon services stopped or that network telemetry is absent.
 
@@ -62,7 +62,11 @@ The newest 30 reports per device are retained in `reports/<device-id>/`; the bas
 
 ## Daily rhythm
 
-Choose 1–24 distinct start times and a collection for each. Each entry lasts until the next and the last wraps across midnight. Save, sync, then choose **Scenery → Collection → Scheduled** on the TV. Time follows the TV's own clock and timezone. Empty collections fall back to other eligible scenes; hidden clips remain hidden. Select **All scenes** to return to the full library.
+Choose 1–24 entries and a collection for each. Each entry lasts until the next and the last wraps across midnight. **Starts at** is a **Time**, or **Sunrise** or **Sunset** with an offset in minutes (−240 to 240, in steps of 5). A preview under a sun entry shows today's time, such as "Sunset +30 → 6:42 PM today". Times must differ, and two sun entries cannot share the same sunrise or sunset and offset. Save, sync, then choose **Scenery → Collection → Scheduled** on the TV. Time follows the TV's own clock and timezone. Empty collections fall back to other eligible scenes; hidden clips remain hidden. Select **All scenes** to return to the full library.
+
+GlassOS 1.6.0 and later works out each sun entry's time on the TV every day. Every entry also keeps a fixed start, which older GlassOS versions use, and which the TV uses on days without a sunrise or sunset. When you save and when you sync, the manager sets it to that day's sun time in the TV's time zone's main city, moved on a minute if it meets another entry. That needs the TV's time zone, which **Check device** or the **Check** below reads. Until then the fixed start is 06:00 (sunrise) or 18:00 (sunset) plus the offset, and the preview asks you to check the TV. The fixed start never uses the place set below (the preview does): two sun times in `scenery.json` would give that place away.
+
+**Sun times location** shows where the TV's sun times come from: a place set from this Mac, or an estimate from its time zone's main city, which can be off by about an hour, or more in a wide time zone or far north. Enter a place name (optional, up to 40 characters), latitude and longitude, or choose **Use this Mac's location** to fill them in where the browser allows it, then **Save to TV**. **Look up from internet address** fills them in from where this Mac's public internet address appears to be, as [ipinfo.io](https://ipinfo.io) reports it, with the city and region as the name; a VPN or mobile hotspot can give the wrong city, so check it before **Save to TV**. Nothing reaches the TV until you do. **Use time zone estimate** clears the place. The TV shows a notice for either. **Check** reads the TV's source and its sunrise and sunset for the day. Coordinates are rounded to 0.1° (about 11 km) in the page, before they are sent. The place is kept on the TV and in this Mac's device record, never in `scenery.json` or a settings backup. This panel needs GlassOS 1.6.0 or later.
 
 The schedule and scene metadata travel with the media as `scenery.json` and `scenes.json`. The TV's chosen collection mode travels in settings backups. Details and standalone examples are in [the user guide](../docs/USAGE.md#collections-and-daily-rhythm).
 
@@ -72,9 +76,51 @@ The schedule and scene metadata travel with the media as `scenery.json` and `sce
 
 Choose another device and **Copy to selected TV** beside a saved backup. The TV opens its existing restore screen; choose the file and confirm there. Cancel leaves the current settings intact. Backups include layout, folders and display/scenery preferences, and exclude account credentials, usage history, device permissions and Home routing. Videos are separate.
 
+## TV controls
+
+**TV controls** changes a few things on the selected TV over ADB, each only when you choose it. It needs GlassOS 1.6.0 or later; an older TV gets "Update GlassOS to 1.6.0 or later on this TV." The TV shows a notice when a new lock code is set or the app lock is turned off; the screensaver and casting-protection changes show none. Each panel's **Check** only reads.
+
+GlassOS accepts these controls only from the TV's ADB shell (`adb shell content call`); other apps on the TV cannot use them. The manager sends only a fixed list of commands, and checks every value before it connects. This adds nothing for someone who already has ADB access to the TV: they could already clear GlassOS, change its permissions or force it to stop.
+
+### App lock
+
+- **Check** shows whether a lock code is set, how many apps are locked (and how many of those are not installed now), and whether casting protection is on.
+- **Set a new lock code** asks for 4 remote buttons on screen (arrows, Rewind, Play/Pause, Fast forward; the keyboard's arrow keys work too), entered twice. The old code is not needed, so this is also the way back from a forgotten code. Locked apps stay locked.
+- **Turn off app lock** asks first, then unlocks every app and deletes the code. To lock apps again, hold OK on an app on the TV.
+- **Allow casting protection** appears only when the guard cannot run and GlassOS lacks Display over other apps, on Android 10 or later (older TVs do not need it; until **Check device** has read the TV's Android version, the manager assumes they do). After you confirm, it runs one command: `appops set io.github.abhishekkaisar.glassos.aerial SYSTEM_ALERT_WINDOW allow`. Run it with `default` instead of `allow` to undo it. The guard also needs Usage access, granted on the TV, and starts the next time GlassOS opens with an app locked.
+
+The code exists only in the open page until it is sent, and is then cleared. It is never saved in the data folder or the browser's storage, and never appears in job messages, logs or errors. It crosses your home network in ADB's plain-text connection, so use these controls on a network you trust.
+
+### Screen Mirroring
+
+**Check** reads, and only reads, GlassOS's Screen Mirroring (GlassOS with Screen Mirroring and Fire OS 6 or later):
+whether it is on, what the receiver is doing (ready and its name, mirroring, playing, showing a code, starting, could
+not start, or stopped unexpectedly), Require PIN, Resolution, Sender controls TV volume, and restarts after a crash.
+It sends one `airplay-status` call. The manager never turns Screen Mirroring on or off or changes its settings: that
+is done on the TV, in Settings. A code shown on the TV never reaches the manager. See the
+[Screen Mirroring guide](../docs/SCREEN-MIRRORING.md).
+
+### Screensaver
+
+**Check** reads the TV's screensaver settings and whether GlassOS's screensaver is installed. It lists what stops a screensaver (Stay awake while plugged in; Amazon's Ambient Experience) and notes what may get in the way (a sleep time no longer than the screensaver's wait; Launcher Manager, which can also change the screensaver).
+
+**Use GlassOS scenery** appears after a Check finds GlassOS's screensaver on the TV. Its confirmation lists exactly these changes; the last two are checkboxes, shown only when that setting is on, and ticked by default:
+
+| Setting | Set to |
+| --- | --- |
+| `secure screensaver_components` | `io.github.abhishekkaisar.glassos.aerial/io.github.abhishekkaisar.glassos.AerialDream` |
+| `secure screensaver_enabled` | `1` |
+| `secure screensaver_activate_on_sleep` | `1` |
+| `secure amazon_ambient_enabled` (Fire TV) | `0`, if ticked; restart the TV once afterwards |
+| `global stay_on_while_plugged_in` | `0`, if ticked |
+
+Before its first change, the manager saves the TV's current screensaver settings on this Mac, once: using it again keeps that first set. Afterwards it reads the settings back and reports an error if the TV did not keep GlassOS as its screensaver; **Restore previous screensaver** then puts back what it changed. It never writes `screensaver_activate_on_dock`, `screensaver_default_component`, `sleep_timeout` or `screen_off_timeout`, and never restarts the TV. Whether Fire OS 8.1.8.5 keeps a third-party screensaver after these changes has not been verified yet.
+
+**Restore previous screensaver** appears while a saved set exists. It puts back only the settings the manager changed, as they were before its first change: a setting that did not exist is deleted (`settings delete`), and the others are set back (`settings put`). It reads them back and clears the saved set only when every one matches. If the TV's screensaver is neither GlassOS scenery nor the one saved, because another was chosen on the TV or by another tool, Restore changes nothing and keeps the saved set; to put the saved values back anyway, choose **Use GlassOS scenery**, then **Restore previous screensaver**. If Restore turned Amazon's Ambient Experience back on, restart the TV once.
+
 ## Local privacy and failure behavior
 
-The service uses a fresh session token, checks the Host and Origin of API requests, denies cross-site API access, and serves only specific static files and known scene posters. It does not expose a general filesystem route or arbitrary ADB/shell command endpoint. Device changes run one operation at a time. The data folder holds device addresses, health reports, imported clips, backups and recovery files; keep it private and outside Git.
+The service uses a fresh session token, checks the Host and Origin of API requests, denies cross-site API access, and serves only specific static files and known scene posters. It does not expose a general filesystem route or arbitrary ADB/shell command endpoint. It goes to the internet only when you ask: **Load catalog** and **Download & compress** fetch that feed and video, and **Look up from internet address** sends one HTTPS request to `https://ipinfo.io/json`, with no account or key. That request tells ipinfo.io this Mac's public internet address, as visiting any website would. The manager keeps nothing from the reply: the address is never saved, logged or shown, and the place only fills the form (and the activity log until the manager quits). Device changes run one operation at a time. The data folder holds device addresses, health reports, imported clips, backups, recovery files, each TV's sun times place and its saved screensaver settings; keep it private and outside Git. It never holds an app lock code.
 
 Tests run without an attached device:
 

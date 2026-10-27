@@ -5,4 +5,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "GlassOS"
-include(":app")
+include(":app", ":airplay")

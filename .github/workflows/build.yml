@@ -18,8 +18,19 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+      - name: Install NDK and CMake (screen mirroring natives)
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.0.12077973" "cmake;3.22.1" > /dev/null
+      - name: Cache OpenSSL source tarball
+        uses: actions/cache@v4
+        with:
+          path: .cache/airplay-downloads
+          key: openssl-3.5.9-603f5602e2eef00d
       - name: Run unit tests, build debug APK, and lint
         run: ./gradlew testDebugUnitTest assembleDebug lint
+      - name: Check screen-mirroring packaging and test its probe
+        run: |
+          python3 tools/airplay/check_apk.py app/build/outputs/apk/debug/app-debug.apk
+          python3 -m unittest discover -s tools/airplay -v
       - name: Test desktop companion and check JavaScript
         run: |
           python3 -m unittest discover -s manager/tests -v

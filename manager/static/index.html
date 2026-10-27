@@ -32,6 +32,9 @@
         <button class="nav" data-page="profiles">
           Device profiles <span>07</span>
         </button>
+        <button class="nav" data-page="tv">
+          TV controls <span>08</span>
+        </button>
       </nav>
       <div class="device-picker">
         <label for="device">YOUR FIRE STICK</label
@@ -187,7 +190,9 @@
         </div>
         <p class="intro">
           Choose a collection for each part of the day. Each entry lasts until
-          the next, following your TV’s local time.
+          the next, following your TV’s local time. An entry can also start at
+          sunrise or sunset, or a few minutes before or after; its time then
+          moves with the seasons.
         </p>
         <div id="periods" class="periods"></div>
         <div class="schedule-footer">
@@ -195,9 +200,65 @@
           <p>
             Then sync your scenery and choose
             <b>Scenery → Collection → Scheduled</b> on the TV. An empty
-            collection falls back to other visible scenes.
+            collection falls back to other visible scenes. Older GlassOS
+            versions, and days without a sunrise or sunset, use the sun times
+            of the day you last synced.
           </p>
         </div>
+        <article class="panel sun-panel" id="sun-panel">
+          <div class="section-heading">
+            <h2>Sun times location</h2>
+            <span id="sun-checked">Not checked yet</span>
+          </div>
+          <div id="sun-status" class="check-list"></div>
+          <div class="sun-fields">
+            <label
+              >Place name<input
+                id="sun-label"
+                maxlength="40"
+                autocomplete="off"
+                placeholder="Home" /></label
+            ><label
+              >Latitude<input
+                id="sun-lat"
+                type="number"
+                step="0.1"
+                min="-90"
+                max="90"
+                placeholder="51.5" /></label
+            ><label
+              >Longitude<input
+                id="sun-lon"
+                type="number"
+                step="0.1"
+                min="-180"
+                max="180"
+                placeholder="-0.1"
+            /></label>
+          </div>
+          <div class="tv-actions">
+            <button class="secondary" id="sun-here" type="button">
+              Use this Mac’s location</button
+            ><button class="secondary" id="sun-lookup" data-action="sun-lookup">
+              Look up from internet address</button
+            ><button class="primary" id="sun-save" data-action="sun-location">
+              Save to TV</button
+            ><button class="secondary" id="sun-clear" data-action="sun-location">
+              Use time zone estimate</button
+            ><button class="secondary" data-action="sun-status">Check</button>
+          </div>
+          <p id="sun-found" class="sun-found" role="status" hidden></p>
+          <p class="fine">
+            Without a place, the TV estimates sun times from its time zone’s
+            main city, which can be off by about an hour, or more in a wide time
+            zone or far north. Coordinates are rounded to 0.1° (about 11 km)
+            before they leave this page, and are kept only on this Mac and the
+            TV, never in the scenery files.
+            Looking up from the internet address sends this Mac’s public
+            internet address to ipinfo.io and keeps only the place, in this
+            form; a VPN or mobile hotspot can give the wrong city.
+          </p>
+        </article>
       </section>
       <section id="backups" class="page" hidden>
         <div class="section-heading">
@@ -364,6 +425,93 @@
           </p>
         </div>
       </section>
+      <section id="tv" class="page" hidden>
+        <p class="intro">
+          GlassOS’s app lock and the TV’s screensaver settings, changed over ADB
+          from this Mac, and Screen Mirroring’s state, read only. The TV shows a notice when a lock code is set or the
+          app lock is turned off; the screensaver and casting-protection changes
+          show none. Needs GlassOS 1.6.0 or later.
+        </p>
+        <!-- One panel per control; each renders from the selected device's record. -->
+        <div class="tv-grid">
+          <article class="panel tv-panel" id="applock-panel">
+            <div class="section-heading">
+              <h2>App lock</h2>
+              <span id="applock-checked">Not checked yet</span>
+            </div>
+            <div id="applock-status" class="check-list"></div>
+            <div class="tv-actions">
+              <button class="secondary" data-action="applock-status">Check</button
+              ><button class="primary" id="applock-code" data-action="applock-code">
+                Set a new lock code</button
+              ><button class="secondary" id="applock-off" data-action="applock-off">
+                Turn off app lock</button
+              ><button
+                class="secondary"
+                id="applock-guard"
+                data-action="applock-guard"
+                hidden
+              >
+                Allow casting protection
+              </button>
+            </div>
+            <p class="fine">
+              Forgot the code? Set a new one here: the old one is not needed,
+              because anyone with ADB access to a TV can already reset its app
+              lock. A new code crosses your home network as plain text and is
+              never saved on this Mac.
+            </p>
+          </article>
+          <article class="panel tv-panel" id="screensaver-panel">
+            <div class="section-heading">
+              <h2>Screensaver</h2>
+              <span id="screensaver-checked">Not checked yet</span>
+            </div>
+            <div id="screensaver-status" class="check-list"></div>
+            <div class="tv-actions">
+              <button class="secondary" data-action="screensaver-check">Check</button
+              ><button
+                class="primary"
+                id="screensaver-set"
+                data-action="screensaver-set"
+                hidden
+              >
+                Use GlassOS scenery</button
+              ><button
+                class="secondary"
+                id="screensaver-restore"
+                data-action="screensaver-restore"
+                hidden
+              >
+                Restore previous screensaver
+              </button>
+            </div>
+            <p class="fine">
+              Shows your scenery when the TV is idle in any app, never while a
+              video plays. This changes the TV’s own screensaver settings over
+              ADB: the first time, the values it replaces are saved on this Mac
+              so Restore can put them back. The TV is never restarted, and its
+              sleep timers stay as they are.
+            </p>
+          </article>
+          <article class="panel tv-panel" id="mirroring-panel">
+            <div class="section-heading">
+              <h2>Screen Mirroring</h2>
+              <span id="mirroring-checked">Not checked yet</span>
+            </div>
+            <div id="mirroring-status" class="check-list"></div>
+            <div class="tv-actions">
+              <button class="secondary" data-action="mirroring-status">Check</button>
+            </div>
+            <p class="fine">
+              Read only: whether the TV can receive iPhone, iPad and Mac screens
+              and what it is doing. Turn it on and change its settings in
+              GlassOS Settings on the TV. A code the TV shows is never sent
+              here.
+            </p>
+          </article>
+        </div>
+      </section>
       <footer id="activity">
         <div class="activity-heading">
           <span class="dot"></span
@@ -429,6 +577,118 @@
           <button type="button" class="secondary" data-close="import-dialog">
             Cancel</button
           ><button class="primary">Import & compress</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="code-dialog" aria-labelledby="code-title">
+      <form id="code-form">
+        <h2 id="code-title">A new lock code</h2>
+        <p id="code-step"></p>
+        <div class="code-dots" aria-hidden="true">
+          <i></i><i></i><i></i><i></i>
+        </div>
+        <p id="code-progress" class="sr-only" aria-live="polite"></p>
+        <div class="code-pad" role="group" aria-label="Remote buttons">
+          <button type="button" class="key up" data-key="U">
+            <span aria-hidden="true">↑</span>Up</button
+          ><button type="button" class="key left" data-key="L">
+            <span aria-hidden="true">←</span>Left</button
+          ><button type="button" class="key right" data-key="R">
+            <span aria-hidden="true">→</span>Right</button
+          ><button type="button" class="key down" data-key="D">
+            <span aria-hidden="true">↓</span>Down</button
+          ><button type="button" class="key media" data-key="W">
+            <span aria-hidden="true">⏪&#xFE0E;</span>Rewind</button
+          ><button type="button" class="key media" data-key="P">
+            <span aria-hidden="true">⏯&#xFE0E;</span>Play/Pause</button
+          ><button type="button" class="key media" data-key="F">
+            <span aria-hidden="true">⏩&#xFE0E;</span>Fast forward
+          </button>
+        </div>
+        <p id="code-error" class="code-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button type="button" class="text-button" id="code-clear">Clear</button
+          ><button type="button" class="secondary" data-close="code-dialog">
+            Cancel</button
+          ><button class="primary" id="code-next" disabled>Next</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="applock-off-dialog">
+      <form id="applock-off-form">
+        <h2>Turn off app lock?</h2>
+        <p>
+          Every locked app on this TV will open without a code, and the code is
+          deleted. To lock apps again, hold OK on an app on the TV and choose
+          Lock app.
+        </p>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" data-close="applock-off-dialog">
+            Cancel</button
+          ><button class="primary">Turn off app lock</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="applock-guard-dialog">
+      <form id="applock-guard-form">
+        <h2>Allow casting protection?</h2>
+        <p>
+          This gives GlassOS <b>Display over other apps</b> on this TV, so its
+          lock screen can cover a locked app that is cast from a phone or opened
+          by Alexa or a remote button. GlassOS also uses it to show your home at
+          once after Home.
+        </p>
+        <p class="fine">
+          One ADB command, and nothing else changes:
+          <code>appops set io.github.abhishekkaisar.glassos.aerial SYSTEM_ALERT_WINDOW allow</code>.
+          To undo it, run the same command with <code>default</code> instead of
+          <code>allow</code>.
+        </p>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" data-close="applock-guard-dialog">
+            Cancel</button
+          ><button class="primary">Allow</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="screensaver-dialog">
+      <form id="screensaver-form">
+        <h2>Use GlassOS scenery?</h2>
+        <p>
+          When the TV is idle, it shows your scenery. These settings change on
+          the TV:
+        </p>
+        <ul class="setting-list">
+          <li>
+            <code>secure screensaver_components</code> → GlassOS scenery
+          </li>
+          <li><code>secure screensaver_enabled</code> → 1</li>
+          <li><code>secure screensaver_activate_on_sleep</code> → 1</li>
+        </ul>
+        <label class="option" id="screensaver-ambient" hidden
+          ><input type="checkbox" name="ambient" checked /><span
+            >Turn off Amazon Ambient Experience (needs a TV restart)
+            <span class="setting"
+              ><code>secure amazon_ambient_enabled</code> → 0</span
+            ></span
+          ></label
+        ><label class="option" id="screensaver-stay" hidden
+          ><input type="checkbox" name="stayAwake" checked /><span
+            >Turn off Stay awake while plugged in
+            <span class="setting"
+              ><code>global stay_on_while_plugged_in</code> → 0</span
+            ></span
+          ></label
+        >
+        <p class="fine">
+          The values these replace are saved on this Mac the first time, so
+          Restore previous screensaver can put them back. Nothing else changes:
+          the TV is not restarted, and its sleep timers stay as they are.
+        </p>
+        <div class="dialog-actions">
+          <button type="button" class="secondary" data-close="screensaver-dialog">
+            Cancel</button
+          ><button class="primary">Use GlassOS scenery</button>
         </div>
       </form>
     </dialog>

@@ -277,3 +277,32 @@ class ScenePlaylist(private val random: Random = Random.Default) {
         private const val HISTORY = 50
     }
 }
+
+/**
+ * Who may play scenery video ([SceneSession.owner]): a hold by a decoder outside the scenery views (Screen Mirroring's
+ * receiver) comes first, then the view that claimed it (the screensaver); null: whichever view can.
+ */
+class SceneClaims {
+    /** The view that claimed the decoder (the screensaver), if any. */
+    var view: Any? = null
+        private set
+    /** The outside decoder holding it (Screen Mirroring), if any. */
+    var hold: Any? = null
+        private set
+    val owner: Any? get() = hold ?: view
+
+    /** [by] claims as a view, or holds as an outside decoder ([outside]). True when the owner changed. */
+    fun claim(by: Any, outside: Boolean): Boolean {
+        val before = owner
+        if (outside) hold = by else view = by
+        return owner !== before
+    }
+
+    /** [by] lets go, if it held or claimed. True when the owner changed. */
+    fun yield(by: Any): Boolean {
+        val before = owner
+        if (hold === by) hold = null
+        if (view === by) view = null
+        return owner !== before
+    }
+}

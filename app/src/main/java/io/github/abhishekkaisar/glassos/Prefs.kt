@@ -1,6 +1,7 @@
 package io.github.abhishekkaisar.glassos
 
 import android.content.Context
+import io.github.abhishekkaisar.glassos.airplay.AirPlayConfig
 
 class Prefs(ctx: Context) {
     private val sp = ctx.getSharedPreferences("glass", Context.MODE_PRIVATE)
@@ -138,6 +139,21 @@ class Prefs(ctx: Context) {
         get() = sp.getInt("nightEnd", NightSchedule.DEFAULT_END).coerceIn(0, NightSchedule.DAY - 1)
         set(v) { sp.edit().putInt("nightEnd", v).apply() }
 
+    /** Night follows sunset and sunrise (with the offsets below) instead of [nightStart] and [nightEnd]. */
+    var nightSun: Boolean
+        get() = sp.getBoolean("nightSun", false)
+        set(v) { sp.edit().putBoolean("nightSun", v).apply() }
+
+    /** Minutes after sunset (negative: before) when night starts in sun mode. */
+    var nightStartOffset: Int
+        get() = sp.getInt("nightStartOffset", 0).coerceIn(-NightSchedule.MAX_OFFSET, NightSchedule.MAX_OFFSET)
+        set(v) { sp.edit().putInt("nightStartOffset", v).apply() }
+
+    /** Minutes after sunrise (negative: before) when night ends in sun mode. */
+    var nightEndOffset: Int
+        get() = sp.getInt("nightEndOffset", 0).coerceIn(-NightSchedule.MAX_OFFSET, NightSchedule.MAX_OFFSET)
+        set(v) { sp.edit().putInt("nightEndOffset", v).apply() }
+
     /** 0 low, 1 medium, 2 strong. */
     var nightLevel: Int
         get() = sp.getInt("nightLevel", 1).coerceIn(0, BackupCodec.NIGHT_LEVELS - 1)
@@ -151,6 +167,28 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("reduceMotion", false)
         set(v) { sp.edit().putBoolean("reduceMotion", v).apply() }
 
+    // ---------- Sun times place (never in a backup) ----------
+
+    /**
+     * Where sun times are worked out, set from GlassOS Manager: latitude and longitude rounded to 0.1° and a short
+     * name. Null when not set: sun times then come from the TV's time zone (see [SunNow]).
+     */
+    val sunPlace: Place?
+        get() {
+            val lat = sp.getString("sunLat", null)?.toDoubleOrNull() ?: return null
+            val lon = sp.getString("sunLon", null)?.toDoubleOrNull() ?: return null
+            if (!lat.isFinite() || !lon.isFinite() || lat !in -90.0..90.0 || lon !in -180.0..180.0) return null
+            return Place(lat, lon, sp.getString("sunLabel", "") ?: "", "manager")
+        }
+
+    /** Saves or (null) clears [sunPlace] in one commit. False if not saved. */
+    fun setSunPlace(p: Place?): Boolean {
+        val e = sp.edit()
+        if (p == null) e.remove("sunLat").remove("sunLon").remove("sunLabel")
+        else e.putString("sunLat", p.lat.toString()).putString("sunLon", p.lon.toString()).putString("sunLabel", p.label)
+        return e.commit()
+    }
+
     // ---------- Folders and backups ----------
 
     var folders: List<AppFolder>
@@ -162,15 +200,61 @@ class Prefs(ctx: Context) {
         get() = sp.getString("lastBackup", "") ?: ""
         set(v) { sp.edit().putString("lastBackup", v).apply() }
 
-    /** The whitelisted settings a backup carries (see [BackupData]). */
-    fun toBackup(): BackupData = BackupData(
+    // ---------- Screen Mirroring (the airplay module; off until turned on) ----------
+
+    /** Screen Mirroring is on: the receiver runs, and is restarted after a crash, only while this is true. */
+    var airplayOn: Boolean
+        get() = sp.getBoolean("airplay_on", false)
+        set(v) { sp.edit().putBoolean("airplay_on", v).apply() }
+
+    /** The receiver's settings, kept here as "airplay_<key>" ([AirPlayConfig.KEYS]); unset or invalid ones default. */
+    val airplayConfig: AirPlayConfig
+        get() = AirPlayConfig.fromPrefs(sp.all)
+
+    /** Saves one receiver setting, or (null) goes back to its default. False if not saved. */
+    fun setAirplay(key: AirPlayConfig.Key<*>, value: Any?): Boolean {
+        val e = sp.edit()
+        when {
+            value == null -> e.remove(key.prefKey)
+            value is Boolean -> e.putBoolean(key.prefKey, value)
+            value is Int -> e.putInt(key.prefKey, value)
+            value is String -> e.putString(key.prefKey, value)
+            else -> return false
+        }
+        return e.commit()
+    }
+
+    // ---------- App lock (never in a backup) ----------
+
+    /** Apps that need the lock code (Hold OK > Lock app). Kept when an app is uninstalled, so a reinstall stays locked. */
+    var locked: Set<String>
+        get() = sp.getString("locked", null)?.split(',')?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
+        set(v) { sp.edit().putString("locked", v.joinToString(",")).apply() }
+
+    /** The code as [LockCode.store] keeps it; empty until the first app is locked. Written only with [setLock]. */
+    val lockCode: String
+        get() = sp.getString("lockCode", "") ?: ""
+
+    /** The locked apps and the code in one commit, so a reader never sees one without the other. False if not saved. */
+    fun setLock(locked: Set<String>, code: String): Boolean =
+        sp.edit().putString("locked", locked.joinToString(",")).putString("lockCode", code).commit()
+
+    /**
+     * The whitelisted settings a backup carries (see [BackupData]); Screen Mirroring's only where it is available
+     * ([includeMirroring]), so a TV or build without it writes none.
+     */
+    fun toBackup(includeMirroring: Boolean): BackupData = BackupData(
         dock = dock, order = order, hidden = hidden.toList(), folders = folders,
         display = DisplayBackup(sound = sound, topShelf = topShelf, scene = scene.takeIf { it in BackupCodec.SCENE_IDS },
             cinemaDelaySec = cinemaDelaySec, cinemaClock = cinemaClock, nightEnabled = nightEnabled, nightStart = nightStart,
-            nightEnd = nightEnd, nightLevel = nightLevel, reduceTransparency = reduceTransparency, reduceMotion = reduceMotion,
+            nightEnd = nightEnd, nightLevel = nightLevel, nightSun = nightSun, nightStartOffset = nightStartOffset,
+            nightEndOffset = nightEndOffset, reduceTransparency = reduceTransparency, reduceMotion = reduceMotion,
             mostUsed = mostUsed, theme = theme, movingClock = movingClock, customArt = customArt),
         scenery = SceneryBackup(shuffle = sceneShuffle, favoritesOnly = sceneFavoritesOnly, labels = sceneLabels,
-            favorites = sceneFavorites.sorted(), hidden = sceneHidden.sorted(), collection = sceneCollection))
+            favorites = sceneFavorites.sorted(), hidden = sceneHidden.sorted(), collection = sceneCollection),
+        mirroring = if (!includeMirroring) null else airplayConfig.let { c ->
+            MirroringBackup(on = airplayOn, name = c.name, pin = c.pin, resolution = c.res, syncVolume = c.syncVolume)
+        })
 
     /** Applies a validated backup in one commit; sections and fields it does not have keep their values. */
     fun apply(d: BackupData): Boolean {
@@ -195,6 +279,9 @@ class Prefs(ctx: Context) {
             s.nightStart?.let { e.putInt("nightStart", it) }
             s.nightEnd?.let { e.putInt("nightEnd", it) }
             s.nightLevel?.let { e.putInt("nightLevel", it) }
+            s.nightSun?.let { e.putBoolean("nightSun", it) }
+            s.nightStartOffset?.let { e.putInt("nightStartOffset", it) }
+            s.nightEndOffset?.let { e.putInt("nightEndOffset", it) }
             s.reduceTransparency?.let { e.putBoolean("reduceTransparency", it) }
             s.reduceMotion?.let { e.putBoolean("reduceMotion", it) }
             s.mostUsed?.let { e.putBoolean("mostUsed", it) }
@@ -206,6 +293,14 @@ class Prefs(ctx: Context) {
             s.labels?.let { e.putBoolean("sceneLabels", it) }
             s.favorites?.let { e.putString("sceneFav", org.json.JSONArray(it).toString()) }
             s.hidden?.let { e.putString("sceneHidden", org.json.JSONArray(it).toString()) }
+        }
+        d.mirroring?.let { m ->
+            m.on?.let { e.putBoolean("airplay_on", it) }
+            // Empty is the TV's own name, the default.
+            m.name?.let { if (it.isEmpty()) e.remove(AirPlayConfig.NAME.prefKey) else e.putString(AirPlayConfig.NAME.prefKey, it) }
+            m.pin?.let { e.putBoolean(AirPlayConfig.PIN.prefKey, it) }
+            m.resolution?.let { e.putString(AirPlayConfig.RES.prefKey, it) }
+            m.syncVolume?.let { e.putBoolean(AirPlayConfig.SYNC_VOLUME.prefKey, it) }
         }
         return e.commit()
     }

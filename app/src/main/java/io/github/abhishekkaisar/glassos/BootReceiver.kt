@@ -14,6 +14,8 @@ import android.os.UserManager
  * 100 receivers in turn, so a priority-0 receiver gets it about 1 m 50 s after boot. Glass listens with a high
  * priority and also for LOCKED_BOOT_COMPLETED, which arrives within seconds of boot. USER_PRESENT and
  * MY_PACKAGE_REPLACED restart only the watcher. Two alarm kicks after boot cover a watcher that failed to start.
+ * BOOT_COMPLETED, QUICKBOOT_POWERON and MY_PACKAGE_REPLACED (an update stops the receiver's process too) also start
+ * the Screen Mirroring receiver when it is on, once per process ([ScreenMirroring.sync]).
  */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -43,6 +45,11 @@ class BootReceiver : BroadcastReceiver() {
             }
             KICK -> HomeWatcher.sync(context, lookBack = true)
             else -> HomeWatcher.sync(context)
+        }
+        AppLockGuard.sync(context)
+        // Not on LOCKED_BOOT_COMPLETED: the receiver's settings and identity are in credential storage.
+        if (a == Intent.ACTION_BOOT_COMPLETED || a == QUICKBOOT || a == Intent.ACTION_MY_PACKAGE_REPLACED) {
+            ScreenMirroring.sync(context, Prefs(context), a.substringAfterLast('.'))
         }
     }
 

@@ -16,11 +16,25 @@ Thanks for helping. Issues and pull requests are welcome. Fork-specific question
 
 ## Build
 
-Requirements: JDK 17 and the Android SDK (platform 34, build tools 34.0.0). No keys are needed.
+Requirements: JDK 17 and the Android SDK (platform 34, build tools 34.0.0). No keys are needed. The
+screen-mirroring module (`airplay/`) also needs NDK 27.0.12077973 and CMake 3.22.1, which you can install with
+`sdkmanager "ndk;27.0.12077973" "cmake;3.22.1"` or Android Studio's SDK Manager, and perl, GNU make, patch and
+python3 on your computer (macOS and Linux have them, or get them from Homebrew or your package manager). They
+build OpenSSL from source. The first build downloads the OpenSSL source once, checks its SHA-256 and keeps it in
+`.cache/airplay-downloads/`, so later clean builds work offline.
 
 ```sh
 ./gradlew testDebugUnitTest assembleDebug lint   # app/build/outputs/apk/debug/app-debug.apk
+python3 tools/airplay/check_apk.py app/build/outputs/apk/debug/app-debug.apk   # native packaging check
 ```
+
+To build without the native code (no NDK, CMake or OpenSSL needed), add `-Pglassos.airplay.native=false`. The APK
+then has no native libraries, and Screen Mirroring is hidden.
+
+The receiver's native sources under `airplay/src/main/cpp/third_party/` are vendored copies of pinned upstream
+commits. Do not edit them by hand: `tools/airplay/vendor.sh` regenerates them from the pins and the patches in
+`airplay/src/main/cpp/patches/`, and `tools/airplay/vendor.sh --verify` checks the committed tree. Their licences
+are listed in `THIRD_PARTY_NOTICES.md`.
 
 The app targets API 28 on purpose (a sideloaded TV launcher using classic shared storage), so lint's Play-only
 `ExpiredTargetSdkVersion` check is turned off in `app/build.gradle.kts`; see README > Building.
@@ -57,8 +71,9 @@ that both platforms share, say in the pull request what you could and could not 
 ## What CI checks
 
 The **Build** workflow runs on every pull request and every push to `main`. It runs unit tests, builds the debug APK and checks lint with
-`./gradlew testDebugUnitTest assembleDebug lint` using no TMDB key and no signing key, and uploads the APK as an artifact so you can
-install it from the run page. It does not run on a device.
+`./gradlew testDebugUnitTest assembleDebug lint` using no TMDB key and no signing key, checks the screen-mirroring
+libraries in the APK with `tools/airplay/check_apk.py`, and uploads the APK as an artifact so you can install it from
+the run page. It does not run on a device.
 
 ## Code style
 

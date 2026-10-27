@@ -31,4 +31,12 @@ class AppearanceTest {
             assertEquals(setOf(2), (start until start + 4).map { CinemaPosition.corner(it, false) }.toSet())
         }
     }
+
+    @Test fun sceneNameKeepsClearOfTheClock() {
+        assertEquals(0, CinemaPosition.labelCorner(null))
+        for (clock in 0..3) assertNotEquals(clock, CinemaPosition.labelCorner(clock))
+        // Moved out of the top left, the name is also clear of the clock's next corner (top right).
+        assertEquals(3, CinemaPosition.labelCorner(0))
+        assertNotEquals(CinemaPosition.corner(1L, true), CinemaPosition.labelCorner(CinemaPosition.corner(0L, true)))
+    }
 }

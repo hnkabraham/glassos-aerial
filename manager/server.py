@@ -209,6 +209,39 @@ class Handler(BaseHTTPRequestHandler):
                     ),
                     "update": ("Update GlassOS", lambda log: m.update(id, log)),
                     "home": ("Open GlassOS", lambda log: m.device(id).start()),
+                    "applock-status": ("Check app lock", lambda log: m.applock_status(id, log)),
+                    # The code goes to core unread; the job keeps only this title.
+                    "applock-code": (
+                        "Set a new lock code",
+                        lambda log: m.applock_set(id, data.get("code"), log),
+                    ),
+                    "applock-off": ("Turn off app lock", lambda log: m.applock_off(id, log)),
+                    "applock-guard": (
+                        "Allow casting protection",
+                        lambda log: m.applock_allow_guard(id, log),
+                    ),
+                    "screensaver-check": ("Check screensaver", lambda log: m.screensaver_check(id, log)),
+                    # Read only: the TV's Screen Mirroring state.
+                    "mirroring-status": ("Check Screen Mirroring", lambda log: m.mirroring_status(id, log)),
+                    # options: {"ambient": bool, "stayAwake": bool}, checked in core.
+                    "screensaver-set": (
+                        "Use GlassOS scenery",
+                        lambda log: m.screensaver_set(id, data.get("options"), log),
+                    ),
+                    "screensaver-restore": (
+                        "Restore previous screensaver",
+                        lambda log: m.screensaver_restore(id, log),
+                    ),
+                    "sun-status": ("Check sun times", lambda log: m.sun_status(id, log)),
+                    # A place to send, or null to go back to the TV's time-zone estimate.
+                    "sun-location": (
+                        "Use time zone estimate" if data.get("location") is None else "Save sun times place",
+                        lambda log: m.sun_set_location(id, data.get("location"), log),
+                    ),
+                    # Internet only (ipinfo.io), never the TV; the place it finds fills the form and is not saved.
+                    "sun-lookup": (
+                        "Look up place from internet address", lambda log: m.sun_lookup(log)
+                    ),
                 }
                 if action not in actions:
                     raise Error("Unknown operation.")

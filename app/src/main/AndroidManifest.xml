@@ -52,6 +52,53 @@
             android:name=".HomeWatcher"
             android:exported="false" />
 
+        <!-- App lock: covers a locked app however it opens (a cast, Alexa, a remote button) until its code is entered.
+             Its own task, so the right code returns to the app beneath; never in recents or kept once left. -->
+        <service
+            android:name=".AppLockGuard"
+            android:exported="false" />
+
+        <activity
+            android:name=".LockActivity"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:noHistory="true"
+            android:screenOrientation="landscape"
+            android:taskAffinity="io.github.abhishekkaisar.glassos.lock" />
+
+        <!-- GlassOS scenery as the TV's screensaver, once GlassOS Manager chooses it (secure screensaver_components). The
+             permission lets only the system bind it. No android:process: it shares the home's scenery play state. -->
+        <service
+            android:name=".AerialDream"
+            android:exported="true"
+            android:label="GlassOS scenery"
+            android:permission="android.permission.BIND_DREAM_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.dreams.DreamService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+
+        <!-- Settings > Screensaver > Preview. Landscape like the other screens (a TV does not rotate). -->
+        <activity
+            android:name=".ScreensaverPreview"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:screenOrientation="landscape"
+            tools:ignore="DiscouragedApi" />
+
+        <!-- GlassOS Manager's controls (`adb shell content call`). DUMP keeps ordinary apps out (the shell and some
+             system apps hold it); ManagerProvider also refuses any caller but the shell and root. -->
+        <provider
+            android:name=".ManagerProvider"
+            android:authorities="${applicationId}.manager"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
+
         <!-- Fire OS delivers BOOT_COMPLETED to its ~100 receivers one at a time, in priority order: at priority 0
              Glass got it about 1 m 50 s after boot. 999 puts it among the first; LOCKED_BOOT_COMPLETED comes
              within seconds. -->

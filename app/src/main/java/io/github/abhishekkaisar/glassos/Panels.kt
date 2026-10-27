@@ -113,6 +113,12 @@ class SceneLabel(ctx: Context) : LinearLayout(ctx) {
         setShadowLayer(ctx.dp(6f), 0f, ctx.dp(1f), 0xB3000000.toInt())
     }
     private val hideLater = Runnable { hide() }
+    /** Its corner: 0 top left or 3 bottom left (see [CinemaPosition.labelCorner]). */
+    var corner = 0
+        private set
+    /** From [show] until [hide] (fading out, it is no longer shown). */
+    var shown = false
+        private set
 
     init {
         orientation = VERTICAL
@@ -124,9 +130,11 @@ class SceneLabel(ctx: Context) : LinearLayout(ctx) {
         addView(hint, LayoutParams(-2, -2).apply { topMargin = ctx.dpi(8f) })
     }
 
-    /** Shows [name] (with [hintText] under it) for [holdMs], or until [hide] when [holdMs] is 0. */
-    fun show(name: SceneName, hintText: String?, holdMs: Long) {
+    /** Shows [name] (with [hintText] under it) in corner [at] for [holdMs], or until [hide] when [holdMs] is 0. */
+    fun show(name: SceneName, hintText: String?, holdMs: Long, at: Int = 0) {
         removeCallbacks(hideLater)
+        shown = true
+        moveTo(at)
         title.text = name.title
         place.text = name.location
         place.visibility = if (name.location.isEmpty()) View.GONE else View.VISIBLE
@@ -140,9 +148,64 @@ class SceneLabel(ctx: Context) : LinearLayout(ctx) {
 
     fun hide(instant: Boolean = false) {
         removeCallbacks(hideLater)
+        shown = false
         animate().cancel()
         if (instant || visibility != View.VISIBLE) { alpha = 0f; visibility = View.GONE; return }
         animate().alpha(0f).setDuration(Effects.fade(600)).withEndAction { visibility = View.GONE }.start()
+    }
+
+    /** Moves to [c] (0 or 3) with the same margins, mirrored top to bottom. */
+    private fun moveTo(c: Int) {
+        val lp = layoutParams as? FrameLayout.LayoutParams ?: return
+        if (c == corner) return
+        corner = c
+        val m = maxOf(lp.topMargin, lp.bottomMargin)
+        lp.gravity = (if (c == 3) Gravity.BOTTOM else Gravity.TOP) or Gravity.START
+        lp.topMargin = if (c == 3) 0 else m
+        lp.bottomMargin = if (c == 3) m else 0
+        layoutParams = lp
+    }
+}
+
+/**
+ * The cinema clock: the time, large and light, over the scenery (the home's cinema mode and the screensaver). Starts
+ * hidden; its holder fades it in. Moves between safe corners once per minute (see [CinemaPosition]).
+ */
+class CinemaClock(ctx: Context) : TextView(ctx) {
+    init {
+        textSize = 54f
+        typeface = Fonts.light
+        setTextColor(0xF2FFFFFF.toInt())
+        setShadowLayer(ctx.dp(10f), 0f, ctx.dp(1f), 0x99000000.toInt())
+        alpha = 0f
+        visibility = View.GONE
+    }
+
+    /** Shows the time now. */
+    fun update() { text = time(context) }
+
+    /** The corner it was last placed in (see [CinemaPosition]); it starts bottom right. */
+    var corner = 2
+        private set
+
+    /** Takes this minute's corner (bottom right when [moving] is off), inside the TV's safe margins. */
+    fun place(moving: Boolean) {
+        corner = CinemaPosition.corner(android.os.SystemClock.elapsedRealtime() / 60000L, moving)
+        val vertical = if (corner < 2) Gravity.TOP else Gravity.BOTTOM
+        val horizontal = if (corner == 0 || corner == 3) Gravity.LEFT else Gravity.RIGHT
+        val sw = Backdrop.screenW
+        val sh = Backdrop.screenH
+        layoutParams = FrameLayout.LayoutParams(-2, -2, vertical or horizontal).apply {
+            setMargins(sw * 64 / 1920, sh * 48 / 1080, sw * 64 / 1920, sh * 48 / 1080)
+        }
+    }
+
+    companion object {
+        /** "21:05" or "9:05 PM", as the TV is set; the user pill shows the same. */
+        fun time(ctx: Context): String {
+            val fmt = if (android.text.format.DateFormat.is24HourFormat(ctx)) "H:mm" else "h:mm a"
+            return android.text.format.DateFormat.format(fmt, System.currentTimeMillis()).toString().uppercase()
+        }
     }
 }
 
@@ -505,6 +568,7 @@ class FolderPanel(private val home: HomeScreen) : FrameLayout(home.ctx) {
             "Open" to { val p = pkg; close(instant = true) { home.launch(p, null) } },
             "Remove from folder" to { home.removeFromFolder(id, pkg); show(Mode.MEMBERS) }
         )
+        home.lockItem(pkg)?.let { items.add(it) }
         if (Platform.canUninstall(context, pkg)) items.add("Uninstall" to { home.requestUninstall(pkg) })
         home.card(label, items)
     }

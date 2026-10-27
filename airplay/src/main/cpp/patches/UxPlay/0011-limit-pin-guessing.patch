@@ -1,0 +1,159 @@
+diff --git a/lib/raop.c b/lib/raop.c
+index 79810a5..1abeead 100644
+--- a/lib/raop.c
++++ b/lib/raop.c
+@@ -80,6 +80,9 @@ struct raop_s {
+      /* for temporary storage of pin during pair-pin start */
+     unsigned short pin;
+     bool use_pin;
++    /* GlassOS: wrong pair-setup-pin codes in this run, and when the next attempt may start (CLOCK_MONOTONIC ns) */
++    unsigned int pin_failures;
++    uint64_t pin_retry_ns;
+   
+      /* public key as string */
+     char pk_str[2*ED25519_KEY_SIZE + 1];
+@@ -123,6 +126,8 @@ struct raop_conn_s {
+     char *client_session_id;
+     bool authenticated;
+     bool have_active_remote;
++    /* GlassOS: how far pair-setup-pin got on this connection: 0 not started, 1 user created, 2 proof accepted */
++    unsigned char pin_step;
+ };
+ typedef struct raop_conn_s raop_conn_t;
+ 
+diff --git a/lib/raop_handlers.h b/lib/raop_handlers.h
+index dd61fe8..9e5dc17 100644
+--- a/lib/raop_handlers.h
++++ b/lib/raop_handlers.h
+@@ -26,6 +26,7 @@
+ #include <ctype.h>
+ #include <stdlib.h>
+ #include <inttypes.h>
++#include <time.h>
+ #include <plist/plist.h>
+ #define AUDIO_SAMPLE_RATE 44100   /* all supported AirPlay audio format use this sample rate */
+ #define SECOND_IN_USECS 1000000
+@@ -276,6 +277,48 @@ raop_handler_pairpinstart(raop_conn_t *conn,
+     logger_log(raop->logger, LOGGER_INFO, "*** CLIENT MUST NOW ENTER PIN = \"%s\" AS AIRPLAY PASSWORD", pin);
+ }
+ 
++/* GlassOS: guessing the PIN. Each wrong code makes the next pair-setup-pin wait longer (1, 2, 4 ... 60 seconds), and
++ * every third one replaces a fixed PIN (raop->pin > 9999, one per run) with a new random one, which the TV shows.
++ * A device trying all 10000 codes then needs days, and the TV keeps showing new codes while it tries. */
++#define PIN_WAIT_MAX_SECS 60
++#define PIN_RENEW_AFTER 3
++
++static uint64_t
++pin_clock_ns() {
++    struct timespec t;
++    clock_gettime(CLOCK_MONOTONIC, &t);
++    return (uint64_t) t.tv_sec * SECOND_IN_NSECS + (uint64_t) t.tv_nsec;
++}
++
++static void
++pin_attempt_failed(raop_t *raop) {
++    raop->pin_failures++;
++    unsigned int shift = raop->pin_failures - 1 < 6 ? raop->pin_failures - 1 : 6;
++    uint64_t wait = (uint64_t) 1 << shift;
++    if (wait > PIN_WAIT_MAX_SECS) {
++        wait = PIN_WAIT_MAX_SECS;
++    }
++    raop->pin_retry_ns = pin_clock_ns() + wait * SECOND_IN_NSECS;
++    logger_log(raop->logger, LOGGER_ERR, "pair-setup-pin: wrong code (%u this run), next attempt in %d s",
++               raop->pin_failures, (int) wait);
++    if (raop->pin > 9999 && raop->pin_failures % PIN_RENEW_AFTER == 0) {
++        int pin_4 = random_pin();
++        if (pin_4 < 0) {
++            /* no new code to show: no pairing for the rest of this run, rather than keep the old code */
++            raop->pin_retry_ns = UINT64_MAX;
++            logger_log(raop->logger, LOGGER_ERR, "pair-setup-pin: no random code, pairing refused until restart");
++            return;
++        }
++        raop->pin = (unsigned short) (pin_4 % 10000 + 10000);
++        char pin[6] = { '\0' };
++        snprintf(pin, 5, "%04u", (unsigned int) (pin_4 % 10000));
++        logger_log(raop->logger, LOGGER_ERR, "pair-setup-pin: a new code replaces the old one");
++        if (raop->callbacks.display_pin) {
++            raop->callbacks.display_pin(raop->callbacks.cls, pin);
++        }
++    }
++}
++
+ static void
+ raop_handler_pairsetup_pin(raop_conn_t *conn,
+                            http_request_t *request, http_response_t *response,
+@@ -312,6 +355,19 @@ raop_handler_pairsetup_pin(raop_conn_t *conn,
+   
+     if (PLIST_IS_STRING(req_method_node) && PLIST_IS_STRING(req_user_node)) {
+         /* this is the initial pair-setup-pin request */
++        /* GlassOS: not while a wrong code's wait lasts */
++        uint64_t now = pin_clock_ns();
++        if (now < raop->pin_retry_ns) {
++            if (raop->pin_retry_ns == UINT64_MAX) {
++                logger_log(raop->logger, LOGGER_ERR, "pair-setup-pin refused until the receiver restarts");
++            } else {
++                logger_log(raop->logger, LOGGER_ERR, "pair-setup-pin refused: %d s left after a wrong code",
++                           (int) ((raop->pin_retry_ns - now) / SECOND_IN_NSECS) + 1);
++            }
++            plist_free(req_root_node);
++            goto authentication_failed;
++        }
++        conn->pin_step = 0;
+         const char *salt = NULL;
+         char pin[6] = { '\0' };
+         const char *pk = NULL;
+@@ -350,9 +406,18 @@ raop_handler_pairsetup_pin(raop_conn_t *conn,
+         plist_to_bin(res_root_node, response_data, (uint32_t*) response_datalen);
+         plist_free(res_root_node);
+         http_response_add_header(response, "Content-Type", "application/x-apple-binary-plist");
++        conn->pin_step = 1;
+         return;
+     } else if (PLIST_IS_DATA(req_pk_node) && PLIST_IS_DATA(req_proof_node)) {
+         /* this is the second part of pair-setup-pin request */
++        /* GlassOS: only after the first part on this connection (its SRP user); a proof without one would make
++         * srp_validate_proof read a NULL session->srp */
++        if (conn->pin_step != 1) {
++            logger_log(raop->logger, LOGGER_ERR, "pair-setup-pin: proof without a pairing request on this connection");
++            plist_free(req_root_node);
++            goto authentication_failed;
++        }
++        conn->pin_step = 0;
+         char *client_pk = NULL;
+         char *client_proof = NULL;
+         unsigned char proof[64] = { '\0' };
+@@ -366,6 +431,7 @@ raop_handler_pairsetup_pin(raop_conn_t *conn,
+             free (client_proof);
+             free (client_pk);
+             plist_free(req_root_node);
++            pin_attempt_failed(raop);
+             goto authentication_failed;
+         }
+         if (logger_debug) {
+@@ -381,8 +447,13 @@ raop_handler_pairsetup_pin(raop_conn_t *conn,
+         plist_free(req_root_node);
+         if (ret < 0) {
+             logger_log(raop->logger, LOGGER_ERR, "Client Authentication Failure (client proof not validated)");
++            pin_attempt_failed(raop);
+             goto authentication_failed;
+         }
++        /* GlassOS: the right code: earlier wrong ones no longer count */
++        raop->pin_failures = 0;
++        raop->pin_retry_ns = 0;
++        conn->pin_step = 2;
+         if (logger_debug) {
+ 	    char *str = utils_data_to_string((const unsigned char *) proof, sizeof(proof), 20);
+             logger_log(raop->logger, LOGGER_DEBUG, "server SRP6a proof <M1> :\n%s", str);
+@@ -397,6 +468,13 @@ raop_handler_pairsetup_pin(raop_conn_t *conn,
+         return;
+     } else if (PLIST_IS_DATA(req_epk_node) && PLIST_IS_DATA(req_authtag_node)) {
+         /* this is the third part of pair-setup-pin request */
++        /* GlassOS: only after an accepted proof on this connection (its session key) */
++        if (conn->pin_step != 2) {
++            logger_log(raop->logger, LOGGER_ERR, "pair-setup-pin: confirmation without an accepted proof on this connection");
++            plist_free(req_root_node);
++            goto authentication_failed;
++        }
++        conn->pin_step = 0;
+         char *client_epk = NULL;
+         char *client_authtag = NULL;
+         uint64_t client_epk_len = 0;

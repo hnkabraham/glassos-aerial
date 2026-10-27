@@ -14,6 +14,15 @@ let state = null,
   sceneSignature = "",
   backupSignature = "",
   scheduleLoaded = false;
+// A footer note set by this page (not by a job) stays until the jobs report something newer. A job keeps only its
+// last 100 messages, so its latest message is part of the key too.
+let footerNote = null;
+const jobKey = (j) =>
+  j ? `${j.id} ${j.status} ${j.messages.length} ${j.messages.at(-1) ?? ""}` : "";
+function footer(text) {
+  footerNote = { text, key: jobKey(state?.jobs?.at(-1)) };
+  $("#job-message").textContent = text;
+}
 const posters = new Map();
 const posterRequests = new Map();
 const posterLanes = Array.from({ length: 4 }, () => Promise.resolve());
@@ -81,6 +90,11 @@ const descriptions = {
     "FEEL AT HOME, ANYWHERE",
     "Take your setup along.",
     "Keep a copy, or bring your familiar layout to another TV.",
+  ],
+  tv: [
+    "ON YOUR TV, FROM HERE",
+    "Quiet controls.",
+    "Look after your TV’s protected settings without reaching for the remote.",
   ],
 };
 function el(tag, cls, text) {
@@ -248,6 +262,9 @@ function render() {
     renderSchedule(state.schedule);
     scheduleLoaded = true;
   }
+  document.querySelectorAll("#periods .period").forEach(previewPeriod);
+  renderSun(d);
+  sunLookupDone();
   const bs = JSON.stringify(state.backups);
   if (bs !== backupSignature) {
     backupSignature = bs;
@@ -263,7 +280,7 @@ function render() {
         (b.disabled =
           busy ||
           (!selectedDevice &&
-            !["bundle", "catalog", "catalog-import"].includes(
+            !["bundle", "catalog", "catalog-import", "sun-lookup"].includes(
               b.dataset.action,
             )) ||
           (b.dataset.action === "bundle" && !state.bundle_available)),
@@ -277,8 +294,10 @@ function render() {
         : job.status === "done"
           ? " · Complete"
           : " · Needs attention");
-    $("#job-message").textContent =
-      job.error || job.messages.at(-1) || "Starting…";
+    if (footerNote && footerNote.key !== jobKey(job)) footerNote = null;
+    $("#job-message").textContent = footerNote
+      ? footerNote.text
+      : job.error || job.messages.at(-1) || "Starting…";
     $("#job-log").textContent = state.jobs
       .map(
         (j) =>
@@ -377,14 +396,28 @@ function renderSchedule(periods) {
   $("#periods").replaceChildren();
   periods.forEach((p, i) => addPeriod(p, i));
 }
+// Each row's controls are found by class: a row has two inputs (time, offset) and two selects.
 function addPeriod(
   p = { start: 1200, collection: "space" },
   i = $("#periods").children.length,
 ) {
   const row = el("div", "period");
   row.append(el("span", "number", String(i + 1).padStart(2, "0")));
+  const modeLabel = el("label", "", "STARTS AT"),
+    mode = el("select", "period-mode");
+  for (const [value, label] of [
+    ["time", "Time"],
+    ["sunrise", "Sunrise"],
+    ["sunset", "Sunset"],
+  ]) {
+    const o = el("option", "", label);
+    o.value = value;
+    mode.append(o);
+  }
+  mode.value = p.anchor || "time";
+  modeLabel.append(mode);
   const timeLabel = el("label", "", "FROM"),
-    time = el("input");
+    time = el("input", "period-time");
   time.type = "time";
   time.required = true;
   time.value =
@@ -392,15 +425,58 @@ function addPeriod(
     ":" +
     String(p.start % 60).padStart(2, "0");
   timeLabel.append(time);
-  const colLabel = el("label", "", "SHOW THIS COLLECTION"),
-    col = el("select");
+  const offsetLabel = el("label", "", "OFFSET (MINUTES)"),
+    offset = el("input", "period-offset");
+  offset.type = "number";
+  offset.step = 5;
+  offset.min = -240;
+  offset.max = 240;
+  offset.value = p.offset || 0;
+  offsetLabel.append(offset);
+  const colLabel = el("label", "period-collection-label", "SHOW THIS COLLECTION"),
+    col = el("select", "period-collection");
   options(col, true, p.collection);
   colLabel.append(col);
   const remove = el("button", "remove", "×");
   remove.setAttribute("aria-label", "Remove schedule entry");
   remove.onclick = () => row.remove();
-  row.append(timeLabel, colLabel, remove);
+  const preview = el("p", "fine period-preview");
+  preview.setAttribute("aria-live", "polite");
+  const update = () => {
+    timeLabel.hidden = mode.value !== "time";
+    offsetLabel.hidden = mode.value === "time";
+    previewPeriod(row);
+  };
+  mode.onchange = update;
+  offset.oninput = () => previewPeriod(row);
+  row.append(modeLabel, timeLabel, offsetLabel, colLabel, remove, preview);
   $("#periods").append(row);
+  update();
+}
+const clock = (m) =>
+  new Date(2000, 0, 1, Math.floor(m / 60), m % 60).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+// "Sunset +30 → 6:42 PM today", from the times this Mac works out for the selected TV (the same math as the TV).
+function previewPeriod(row) {
+  const anchor = row.querySelector(".period-mode").value,
+    out = row.querySelector(".period-preview");
+  out.hidden = anchor === "time";
+  if (anchor === "time") return;
+  const offset = Math.round(Number(row.querySelector(".period-offset").value) || 0),
+    name = anchor === "sunrise" ? "Sunrise" : "Sunset",
+    label =
+      name + (offset > 0 ? " +" + offset : offset < 0 ? " −" + -offset : ""),
+    sun = state?.devices.find((d) => d.id === selectedDevice)?.sun_today;
+  if (!sun?.zone)
+    out.textContent = `${label} · check the TV to see today’s time.`;
+  else if (sun.source === "none")
+    out.textContent = `${label} · ${sun.zone} has no place for sun times: set one below.`;
+  else if (sun.polar)
+    out.textContent = `${label} → no ${anchor} today, so this entry keeps its saved time.`;
+  else
+    out.textContent = `${label} → ${clock((((sun[anchor] + offset) % 1440) + 1440) % 1440)} today`;
 }
 function renderBackups() {
   const list = $("#backup-list");
@@ -507,15 +583,29 @@ $("#add-period").onclick = () => addPeriod();
 $("#save-schedule").onclick = async () => {
   try {
     const periods = [...$("#periods").children].map((r) => {
-      const [h, m] = r.querySelector("input").value.split(":").map(Number);
-      return { start: h * 60 + m, collection: r.querySelector("select").value };
+      const anchor = r.querySelector(".period-mode").value,
+        collection = r.querySelector(".period-collection").value;
+      if (anchor !== "time")
+        return {
+          anchor,
+          offset: Number(r.querySelector(".period-offset").value),
+          collection,
+        };
+      const [h, m] = r
+        .querySelector(".period-time")
+        .value.split(":")
+        .map(Number);
+      return { start: h * 60 + m, collection };
     });
-    await api("/api/configure", { schedule: periods });
+    // The selected TV's place and time zone turn sun entries into today's times.
+    await api("/api/configure", {
+      schedule: periods,
+      device: selectedDevice || null,
+    });
     scheduleLoaded = false;
     notice("");
     await refresh();
-    $("#job-message").textContent =
-      "Daily rhythm saved. Sync scenery to send it to your TV.";
+    footer("Daily rhythm saved. Sync scenery to send it to your TV.");
   } catch (e) {
     notice(e.message);
   }
@@ -696,6 +786,9 @@ function renderExtras(device) {
     catalogSignature = sig;
     renderCatalog();
   }
+  renderAppLock(device);
+  renderScreensaver(device);
+  renderMirroring(device);
 }
 function renderCatalog() {
   const entries = state.catalog?.entries || [],
@@ -787,5 +880,471 @@ $("#icon-form").onsubmit = async (e) => {
     await refresh();
   } catch (error) {
     notice(error.message);
+  }
+};
+
+// ---------- TV controls ----------
+// Panels render from the selected device's record; buttons that open a dialog keep data-action, so they are disabled
+// with the others while a job runs, and get their own onclick below (after the data-action wiring above).
+
+let appLockSignature = "",
+  codeFirst = "",
+  codeEntry = "";
+function renderAppLock(device) {
+  const a = device?.applock,
+    sdk = Number(device?.health?.sdk),
+    sig = JSON.stringify(a || null) + (device?.id || "") + sdk;
+  if (sig === appLockSignature) return;
+  appLockSignature = sig;
+  // Below Android 10 the guard needs no Display over other apps (unknown until a device Check: as if it did).
+  const overlayNeeded = !(sdk > 0) || sdk >= 29;
+  $("#applock-checked").textContent = a
+    ? "Checked " + new Date(a.checked_at * 1000).toLocaleString()
+    : "Not checked yet";
+  $("#applock-off").hidden = !!a && !a.code && !a.locked;
+  // Display over other apps only helps when the guard cannot run without it.
+  $("#applock-guard").hidden = !a || a.guard || a.overlay || !overlayNeeded;
+  const list = $("#applock-status");
+  list.replaceChildren();
+  if (!a) {
+    list.append(
+      el(
+        "p",
+        "fine",
+        device
+          ? "Choose Check to read this TV’s app lock."
+          : "Choose a device to get started.",
+      ),
+    );
+    return;
+  }
+  row(list, "Lock code", a.code ? "Set" : "Not set");
+  const n = a.installed_locked,
+    gone = a.locked - a.installed_locked;
+  row(
+    list,
+    "Locked apps",
+    (n === 0 ? "None" : n === 1 ? "1 app" : `${n} apps`) +
+      (gone > 0 ? ` · ${gone} more, not installed` : ""),
+  );
+  const missing = [
+    !a.usage && "Usage access",
+    overlayNeeded && !a.overlay && "Display over other apps",
+  ]
+    .filter(Boolean)
+    .join(" and ");
+  row(
+    list,
+    "Casting protection",
+    !a.guard
+      ? "Off — needs " + missing
+      : a.guard_running !== false
+        ? "On"
+        : a.locked
+          ? "Allowed — starts when GlassOS next opens"
+          : "Allowed — on while an app is locked",
+    a.guard,
+  );
+}
+
+// The code lives only in these two variables while the dialog is open, never in storage.
+function forgetCode() {
+  codeFirst = "";
+  codeEntry = "";
+}
+function showCode() {
+  $("#code-dialog")
+    .querySelectorAll(".code-dots i")
+    .forEach((d, i) => d.classList.toggle("on", i < codeEntry.length));
+  $("#code-progress").textContent = `${codeEntry.length} of 4 buttons pressed`;
+  $("#code-next").disabled = codeEntry.length !== 4;
+  $("#code-next").textContent = codeFirst ? "Save to TV" : "Next";
+  $("#code-title").textContent = codeFirst
+    ? "Enter it again"
+    : "A new lock code";
+  $("#code-step").textContent = codeFirst
+    ? "Press the same 4 buttons, in the same order."
+    : "Press 4 buttons, as you would on the remote: the arrows, Rewind, Play/Pause or Fast forward. A button can repeat.";
+}
+function pressKey(key) {
+  if (codeEntry.length >= 4) return;
+  codeEntry += key;
+  $("#code-error").hidden = true;
+  showCode();
+}
+$("#code-dialog")
+  .querySelectorAll("[data-key]")
+  .forEach((b) => (b.onclick = () => pressKey(b.dataset.key)));
+$("#code-dialog").onkeydown = (e) => {
+  const key = { ArrowUp: "U", ArrowDown: "D", ArrowLeft: "L", ArrowRight: "R" }[
+    e.key
+  ];
+  if (key) {
+    e.preventDefault();
+    pressKey(key);
+  } else if (e.key === "Backspace") {
+    e.preventDefault();
+    codeEntry = codeEntry.slice(0, -1);
+    showCode();
+  }
+};
+$("#code-clear").onclick = () => {
+  codeEntry = "";
+  showCode();
+};
+$("#code-dialog").addEventListener("close", () => {
+  forgetCode();
+  showCode();
+});
+$("#applock-code").onclick = () => {
+  forgetCode();
+  $("#code-error").hidden = true;
+  showCode();
+  $("#code-dialog").showModal();
+};
+$("#code-form").onsubmit = (e) => {
+  e.preventDefault();
+  if (codeEntry.length !== 4) return;
+  // Focus moves into the pad before Next is disabled, so the arrow keys keep reaching the dialog.
+  if (!codeFirst) {
+    codeFirst = codeEntry;
+    codeEntry = "";
+    $("#code-dialog .key").focus();
+    showCode();
+    return;
+  }
+  if (codeEntry !== codeFirst) {
+    forgetCode();
+    $("#code-dialog .key").focus();
+    showCode();
+    $("#code-error").textContent =
+      "The codes did not match, so nothing was sent. Start again.";
+    $("#code-error").hidden = false;
+    return;
+  }
+  const code = codeEntry;
+  forgetCode();
+  $("#code-dialog").close();
+  action("applock-code", { code });
+};
+$("#applock-off").onclick = () => $("#applock-off-dialog").showModal();
+$("#applock-off-form").onsubmit = (e) => {
+  e.preventDefault();
+  $("#applock-off-dialog").close();
+  action("applock-off");
+};
+$("#applock-guard").onclick = () => $("#applock-guard-dialog").showModal();
+$("#applock-guard-form").onsubmit = (e) => {
+  e.preventDefault();
+  $("#applock-guard-dialog").close();
+  action("applock-guard");
+};
+
+// The screensaver panel. "Use GlassOS scenery" offers to turn off what would stop it, as the last Check found it.
+
+let screensaverSignature = "";
+const settingOn = (v) => v !== undefined && v !== "null" && v !== "0";
+function renderScreensaver(device) {
+  const s = device?.screensaver,
+    sig = JSON.stringify(s || null) + (device?.id || "");
+  if (sig === screensaverSignature) return;
+  screensaverSignature = sig;
+  $("#screensaver-checked").textContent = s?.checked_at
+    ? "Checked " + new Date(s.checked_at * 1000).toLocaleString()
+    : "Not checked yet";
+  $("#screensaver-set").hidden = !s?.installed;
+  $("#screensaver-restore").hidden = !s?.previous;
+  const list = $("#screensaver-status");
+  list.replaceChildren();
+  const v = s?.current;
+  if (!v) {
+    list.append(
+      el(
+        "p",
+        "fine",
+        device
+          ? "Choose Check to read this TV’s screensaver settings."
+          : "Choose a device to get started.",
+      ),
+    );
+    return;
+  }
+  const components = v.screensaver_components;
+  row(
+    list,
+    "Screensaver",
+    s.active
+      ? "GlassOS scenery"
+      : components === "null"
+        ? "Not set"
+        : components,
+  );
+  row(
+    list,
+    "GlassOS screensaver",
+    s.installed ? "On this TV" : "Not on this TV — update GlassOS",
+    s.installed,
+  );
+  const idle =
+    v.screensaver_enabled === "1" && v.screensaver_activate_on_sleep === "1";
+  row(list, "Starts when idle", idle ? "Yes" : "No", idle || !s.active);
+  row(
+    list,
+    "Stay awake while plugged in",
+    settingOn(v.stay_on_while_plugged_in) ? "On" : "Off",
+    !settingOn(v.stay_on_while_plugged_in),
+  );
+  if (v.amazon_ambient_enabled !== "null")
+    row(
+      list,
+      "Amazon Ambient Experience",
+      settingOn(v.amazon_ambient_enabled) ? "On" : "Off",
+      !settingOn(v.amazon_ambient_enabled),
+    );
+  row(
+    list,
+    "Saved for Restore",
+    s.previous
+      ? "Since " + new Date(s.saved_at * 1000).toLocaleDateString()
+      : "Nothing saved",
+  );
+  (s.blockers || []).forEach((t) => row(list, "Stops it", t, false));
+  (s.warnings || []).forEach((t) => row(list, "Note", t, false));
+}
+// The Screen Mirroring panel: read only, as the last Check found it.
+let mirroringSignature = "";
+const MIRROR_RES = { auto: "Auto", "1080p": "1080p", "720p": "720p" };
+function renderMirroring(device) {
+  const m = device?.mirroring,
+    sig = JSON.stringify(m || null) + (device?.id || "");
+  if (sig === mirroringSignature) return;
+  mirroringSignature = sig;
+  $("#mirroring-checked").textContent = m?.checked_at
+    ? "Checked " + new Date(m.checked_at * 1000).toLocaleString()
+    : "Not checked yet";
+  const list = $("#mirroring-status");
+  list.replaceChildren();
+  if (!m) {
+    list.append(
+      el(
+        "p",
+        "fine",
+        device
+          ? "Choose Check to read this TV’s Screen Mirroring."
+          : "Choose a device to get started.",
+      ),
+    );
+    return;
+  }
+  if (!m.supported) {
+    row(
+      list,
+      "Screen Mirroring",
+      "Not on this TV or GlassOS build (needs Fire OS 6 or later)",
+      false,
+    );
+    return;
+  }
+  // Off reads Off, whatever the receiver last did; as GlassOS Settings shows it.
+  const state = !m.on
+    ? "Off"
+    : m.gave_up || m.error === "crashed"
+      ? "Stopped unexpectedly"
+      : m.state === "ERROR"
+        ? "Could not start"
+        : m.state !== "RUNNING"
+          ? "Starting"
+          : m.pin_shown
+            ? m.screen
+              ? "Showing a code on the TV"
+              : "Code requested (hidden on the TV)"
+            : m.mode === "MIRROR" || m.mode === "VIDEO"
+              ? "Mirroring" + (m.screen ? "" : " (hidden on the TV)")
+              : m.mode === "AUDIO"
+                ? "Playing music"
+                : `Ready as “${m.name}”`;
+  row(list, "Screen Mirroring", state, !m.on || !(m.gave_up || m.state === "ERROR"));
+  row(list, "Require PIN", m.pin ? "On" : "Off");
+  row(list, "Resolution", MIRROR_RES[m.resolution] || m.resolution);
+  row(list, "Sender controls TV volume", m.sync_volume ? "On" : "Off");
+  if (m.restarts > 0)
+    row(list, "Restarts after a crash", String(m.restarts), false);
+}
+
+$("#screensaver-set").onclick = () => {
+  const v = state.devices.find((d) => d.id === selectedDevice)?.screensaver
+    ?.current;
+  // Offered only when it is on (and Amazon's setting only where the TV has it); ticked by default.
+  $("#screensaver-ambient").hidden = !settingOn(v?.amazon_ambient_enabled);
+  $("#screensaver-stay").hidden = !settingOn(v?.stay_on_while_plugged_in);
+  $("#screensaver-form")
+    .querySelectorAll("input[type=checkbox]")
+    .forEach((c) => (c.checked = true));
+  $("#screensaver-dialog").showModal();
+};
+$("#screensaver-form").onsubmit = (e) => {
+  e.preventDefault();
+  const f = e.target;
+  $("#screensaver-dialog").close();
+  action("screensaver-set", {
+    options: {
+      ambient: !$("#screensaver-ambient").hidden && f.ambient.checked,
+      stayAwake: !$("#screensaver-stay").hidden && f.stayAwake.checked,
+    },
+  });
+};
+
+// ---------- Sun times location (Daily rhythm page) ----------
+// Coordinates are rounded to 0.1° here, before anything leaves the page; the precise position from this Mac is
+// never stored.
+
+let sunSignature = "",
+  sunFormSignature = "";
+const tenth = (x) => Math.round(x * 10) / 10 + 0;
+function renderSun(device) {
+  const s = device?.sun_status,
+    sig = JSON.stringify([device?.id, device?.sun, s]),
+    form = JSON.stringify([device?.id, device?.sun]);
+  if (sig === sunSignature) return;
+  // Fill the fields from the saved place when it (or the device) changes, so a Check keeps a place found but not
+  // saved yet; never under the user's typing.
+  const typing =
+    document.activeElement?.tagName === "INPUT" &&
+    $("#sun-panel").contains(document.activeElement);
+  if (form !== sunFormSignature && !typing) {
+    $("#sun-label").value = device?.sun?.label || "";
+    $("#sun-lat").value = device?.sun ? device.sun.lat : "";
+    $("#sun-lon").value = device?.sun ? device.sun.lon : "";
+  }
+  sunFormSignature = form;
+  sunSignature = sig;
+  $("#sun-checked").textContent = s
+    ? "Checked " + new Date(s.checked_at * 1000).toLocaleString()
+    : "Not checked yet";
+  const list = $("#sun-status");
+  list.replaceChildren();
+  if (!s) {
+    list.append(
+      el(
+        "p",
+        "fine",
+        device
+          ? "Choose Check to see where this TV’s sun times come from."
+          : "Choose a device to get started.",
+      ),
+    );
+    return;
+  }
+  row(
+    list,
+    "On the TV",
+    s.source === "manager"
+      ? `${s.label || "Your place"} · set from this Mac`
+      : s.source === "timezone"
+        ? `${s.label} · estimate from ${s.zone}`
+        : `No place for ${s.zone} · clock times`,
+    s.source === "manager",
+  );
+  row(
+    list,
+    "That day",
+    s.sunrise && s.sunset
+      ? `Sunrise ${s.sunrise} · Sunset ${s.sunset}`
+      : s.polar === "up"
+        ? "The sun does not set"
+        : s.polar === "down"
+          ? "The sun does not rise"
+          : "No sun times",
+  );
+}
+$("#sun-here").onclick = () => {
+  if (!navigator.geolocation) {
+    notice(
+      "This browser cannot share this Mac’s location. Enter the latitude and longitude instead.",
+    );
+    return;
+  }
+  notice("");
+  sunFound("");
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      $("#sun-lat").value = tenth(pos.coords.latitude);
+      $("#sun-lon").value = tenth(pos.coords.longitude);
+      footer(
+        "Location filled in from this Mac, rounded to 0.1°. Add a place name if you like, then choose Save to TV.",
+      );
+    },
+    (error) =>
+      notice(
+        (error.code === 1
+          ? "This Mac did not share its location (Location Services or the browser said no)."
+          : "This Mac could not find its location just now.") +
+          " Enter the latitude and longitude instead, for example from a map.",
+      ),
+    { enableHighAccuracy: false, timeout: 15000, maximumAge: 600000 },
+  );
+};
+$("#sun-save").onclick = () => {
+  const lat = $("#sun-lat").value.trim(),
+    lon = $("#sun-lon").value.trim();
+  if (!lat || !lon || !isFinite(lat) || !isFinite(lon)) {
+    notice(
+      "Enter a latitude and a longitude, or choose Use this Mac’s location.",
+    );
+    return;
+  }
+  sunFound("");
+  action("sun-location", {
+    location: {
+      lat: tenth(Number(lat)),
+      lon: tenth(Number(lon)),
+      label: $("#sun-label").value.trim(),
+    },
+  });
+};
+$("#sun-clear").onclick = () => {
+  sunFound("");
+  action("sun-location", { location: null });
+};
+// The lookup runs in the manager on this Mac (this page may only talk to it). Its job's result fills the form; the TV
+// gets the place only from Save to TV.
+let sunLookupJob = "";
+function sunFound(text, warn = false) {
+  $("#sun-found").textContent = text;
+  $("#sun-found").hidden = !text;
+  $("#sun-found").classList.toggle("warn", warn);
+}
+function sunLookupDone() {
+  const job = sunLookupJob && state.jobs.find((j) => j.id === sunLookupJob);
+  if (!job || job.status === "running") return;
+  sunLookupJob = "";
+  if (job.status !== "done") {
+    sunFound(
+      "Couldn’t look up a place from this Mac’s internet address. Type the place instead.",
+      true,
+    );
+    return;
+  }
+  const r = job.result;
+  $("#sun-label").value = r.label;
+  $("#sun-lat").value = r.lat;
+  $("#sun-lon").value = r.lon;
+  sunFound(
+    `Found: ${r.label || `${r.lat}, ${r.lon}`} — check this is right, then Save to TV.`,
+  );
+}
+$("#sun-lookup").onclick = async () => {
+  try {
+    notice("");
+    sunFound("");
+    sunLookupJob = (await api("/api/action", { action: "sun-lookup" })).job;
+    // Quicker than the regular refresh while the lookup runs (8 s at most).
+    for (let i = 0; i < 30; i++) {
+      await refresh();
+      if (!sunLookupJob) break;
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    }
+  } catch (e) {
+    notice(e.message);
   }
 };

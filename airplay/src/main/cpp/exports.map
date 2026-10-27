@@ -1,0 +1,9 @@
+/* Version script for libairplay_native.so: export only the JNI entry points
+   (Java_io_github_jqssun_airplay_bridge_NativeBridge_*). Everything else, including the statically linked
+   OpenSSL, stays local. */
+{
+  global:
+    Java_*;
+  local:
+    *;
+};

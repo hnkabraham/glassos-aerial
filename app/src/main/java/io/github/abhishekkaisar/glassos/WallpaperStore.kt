@@ -49,6 +49,16 @@ object WallpaperStore {
         return Wallpaper(sharp, blurred)
     }
 
+    /**
+     * Background [id] as one sharp still, without the blur [load] makes (the screensaver's fallback). The user's photos
+     * show the first of them; an image or photo that cannot be read, the desert. Off the UI thread.
+     */
+    fun still(ctx: Context, id: String, w: Int, h: Int): Bitmap = when {
+        id.startsWith("file:") -> decodeCrop(File(id.removePrefix("file:")), w, h)
+        HeroRepo.isHero(id) -> userImages().firstOrNull()?.let { decodeCrop(it, w, h) }
+        else -> scene(ctx, id.removePrefix("scene:"), w, h)
+    } ?: scene(ctx, "desert", w, h)
+
     private fun key(id: String) = id.replace(Regex("[^A-Za-z0-9]"), "_").takeLast(60)
 
     private fun scene(ctx: Context, name: String, w: Int, h: Int): Bitmap {

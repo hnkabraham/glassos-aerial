@@ -2,6 +2,9 @@
 .kotlin/
 build/
 app/build/
+# Native build trees of :airplay and the downloaded OpenSSL tarball
+airplay/.cxx/
+.cache/
 local.properties
 *.iml
 .idea/

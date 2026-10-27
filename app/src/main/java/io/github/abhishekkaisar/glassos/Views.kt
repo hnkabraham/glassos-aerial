@@ -1,5 +1,6 @@
 package io.github.abhishekkaisar.glassos
 
+import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Bitmap
@@ -106,6 +107,7 @@ class TileView(ctx: Context, val cardW: Int, val cardH: Int, private val labelH:
     private val gp = Paint()
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val iconRect = RectF()
+    private val lockPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val text = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = Fonts.medium
         textSize = ctx.dp(13.5f)
@@ -312,6 +314,16 @@ class TileView(ctx: Context, val cardW: Int, val cardH: Int, private val labelH:
             p.lineTo(cx - r * 0.1f, cy + r * 0.38f)
             p.lineTo(cx + r * 0.5f, cy - r * 0.32f)
             c.drawPath(p, ring)
+        }
+
+        // Locked (Hold OK > Lock app): a small padlock in the corner.
+        if (a != null && a.pkg in AppLock.locked) {
+            val r = dp(11f)
+            val cx = w - dp(16f)
+            val cy = h - dp(16f)
+            fill.color = 0xB3000000.toInt()
+            c.drawCircle(cx, cy, r, fill)
+            Glyphs.draw(c, Glyph.LOCK, cx, cy + dp(0.5f), dp(12f), Color.WHITE, lockPaint)
         }
 
         if (a != null && labelH > 0 && labelAlpha > 0.004f) {
@@ -578,6 +590,7 @@ class ThumbView(ctx: Context, private val tw: Int, private val th: Int, val wall
     private val shaderPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val lockPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val gp = Paint()
     private val m = Matrix()
     private val text = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -637,8 +650,93 @@ class ThumbView(ctx: Context, private val tw: Int, private val th: Int, val wall
             p.lineTo(cx + cr * 0.5f, cy - cr * 0.32f)
             c.drawPath(p, ring)
         }
+        // A locked app in a folder: the home tile's padlock, beside the tick when both show.
+        if (wallId in AppLock.locked) {
+            val cx = tw - dp(if (chosen) 40f else 14f)
+            val cy = th - dp(14f)
+            fill.color = 0xB3000000.toInt()
+            c.drawCircle(cx, cy, dp(10f), fill)
+            Glyphs.draw(c, Glyph.LOCK, cx, cy + dp(0.5f), dp(11f), Color.WHITE, lockPaint)
+        }
         text.alpha = ((0.65f + 0.35f * f) * (if (dim) 0.7f else 1f) * 255).toInt()
         val t = TextUtils.ellipsize(label, text, tw.toFloat(), TextUtils.TruncateAt.END).toString()
         c.drawText(t, tw / 2f, th + labelH * 0.72f + dp(2f) * f, text)
+    }
+}
+
+/**
+ * Entry for the app lock's code: a ring per press ([LockCode.LENGTH]), filled as remote buttons are pressed. Takes the
+ * arrows and media keys itself and ignores OK; Back, Menu and Home still reach whatever holds it. [onCode] gets each
+ * full entry a moment after its last ring fills. The buttons pressed are never shown.
+ */
+class CodeDots(ctx: Context) : View(ctx) {
+    var onCode: ((String) -> Unit)? = null
+    private val entered = StringBuilder()
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val r = ctx.dp(9f)
+    private val gap = ctx.dp(22f)
+    private val stroke = ctx.dp(1.6f)
+    private val submit = Runnable { if (entered.length == LockCode.LENGTH) onCode?.invoke(entered.toString()) }
+
+    init {
+        isFocusable = true
+        isFocusableInTouchMode = true
+    }
+
+    fun clear() {
+        removeCallbacks(submit)
+        entered.setLength(0)
+        invalidate()
+    }
+
+    /** A wrong code: the rings empty with a short shake. */
+    fun reject() {
+        clear()
+        if (Effects.reduceMotion) return
+        val d = dp(10f)
+        ObjectAnimator.ofFloat(this, "translationX", 0f, -d, d, -d * 0.6f, d * 0.6f, 0f).setDuration(320).start()
+    }
+
+    override fun onMeasure(w: Int, h: Int) =
+        setMeasuredDimension((LockCode.LENGTH * 2 * r + (LockCode.LENGTH - 1) * gap + stroke).toInt() + 1, (2 * r + dp(8f)).toInt())
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (LockCode.letter(keyCode) != null) {
+            if (event.repeatCount == 0 && entered.length < LockCode.LENGTH) {
+                entered.append(LockCode.letter(keyCode))
+                invalidate()
+                if (entered.length == LockCode.LENGTH) postDelayed(submit, 180)
+            }
+            return true
+        }
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) return true
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean =
+        LockCode.letter(keyCode) != null || keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER ||
+            super.onKeyUp(keyCode, event)
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        removeCallbacks(submit)
+    }
+
+    override fun onDraw(c: Canvas) {
+        val cy = height / 2f
+        var cx = (width - (LockCode.LENGTH * 2 * r + (LockCode.LENGTH - 1) * gap)) / 2f + r
+        for (i in 0 until LockCode.LENGTH) {
+            if (i < entered.length) {
+                paint.style = Paint.Style.FILL
+                paint.color = Color.WHITE
+                c.drawCircle(cx, cy, r, paint)
+            } else {
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = stroke
+                paint.color = 0x8CFFFFFF.toInt()
+                c.drawCircle(cx, cy, r - stroke / 2, paint)
+            }
+            cx += 2 * r + gap
+        }
     }
 }

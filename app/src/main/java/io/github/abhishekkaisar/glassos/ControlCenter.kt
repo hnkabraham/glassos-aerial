@@ -25,9 +25,10 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import io.github.abhishekkaisar.glassos.airplay.AirPlay
 
 /** Line glyphs for Control Center, drawn in a box of side s centred on (cx, cy). No vector assets. */
-enum class Glyph { NONE, POWER, WIFI, MOON, SPEAKER, TIMER, GAMEPAD, ACCESS, LOCK, GEAR, PEOPLE, PLAY, PAUSE, PREV, NEXT, SHIELD, TOGGLES, NOTE, CHECK, CLOSE, OPEN, SCENE }
+enum class Glyph { NONE, POWER, WIFI, MOON, SPEAKER, TIMER, GAMEPAD, ACCESS, LOCK, GEAR, PEOPLE, PLAY, PAUSE, PREV, NEXT, SHIELD, TOGGLES, NOTE, CHECK, CLOSE, OPEN, SCENE, MIRROR }
 
 object Glyphs {
     private val path = Path()
@@ -221,6 +222,16 @@ object Glyphs {
                 p.style = Paint.Style.FILL
                 c.drawCircle(cx + h * 0.42f, cy - h * 0.34f, s * 0.07f, p)
             }
+            Glyph.MIRROR -> {
+                // Screen Mirroring: a TV on its stand showing a phone's screen. GlassOS's own, deliberately unlike the
+                // casting glyphs of other systems (no triangle under the screen, no waves in its corner).
+                r.set(cx - h * 0.95f, cy - h * 0.74f, cx + h * 0.95f, cy + h * 0.5f)
+                c.drawRoundRect(r, h * 0.16f, h * 0.16f, p)
+                c.drawLine(cx - h * 0.4f, cy + h * 0.86f, cx + h * 0.4f, cy + h * 0.86f, p)
+                p.style = Paint.Style.FILL
+                r.set(cx - h * 0.22f, cy - h * 0.46f, cx + h * 0.22f, cy + h * 0.22f)
+                c.drawRoundRect(r, h * 0.09f, h * 0.09f, p)
+            }
             Glyph.OPEN -> {
                 c.drawLine(cx - h * 0.45f, cy + h * 0.45f, cx + h * 0.55f, cy - h * 0.55f, p)
                 c.drawLine(cx - h * 0.1f, cy - h * 0.55f, cx + h * 0.55f, cy - h * 0.55f, p)
@@ -265,8 +276,9 @@ class CcButton(ctx: Context, private val size: Int, private val cellW: Int, glyp
     private val imgPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val m = Matrix()
     private val rect = RectF()
+    private val labelSize = ctx.dp(11.5f)
     private val labelPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        typeface = Fonts.medium; textSize = ctx.dp(11.5f); color = Color.WHITE; textAlign = Paint.Align.CENTER
+        typeface = Fonts.medium; textSize = labelSize; color = Color.WHITE; textAlign = Paint.Align.CENTER
     }
     private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = Fonts.medium; textSize = size * 0.24f; textAlign = Paint.Align.CENTER
@@ -337,7 +349,12 @@ class CcButton(ctx: Context, private val size: Int, private val cellW: Int, glyp
         }
         if (label.isNotEmpty() && labelH > 0) {
             labelPaint.alpha = ((0.7f + 0.3f * f) * 255).toInt()
-            val l = TextUtils.ellipsize(label, labelPaint, width.toFloat() - dp(4f), TextUtils.TruncateAt.END).toString()
+            // A label a little too long for its cell ("Screen Mirroring") is set a little smaller rather than cut short.
+            labelPaint.textSize = labelSize
+            val room = width.toFloat() - dp(4f)
+            val w = labelPaint.measureText(label)
+            if (w > room) labelPaint.textSize = labelSize * maxOf(0.86f, room / w)
+            val l = TextUtils.ellipsize(label, labelPaint, room, TextUtils.TruncateAt.END).toString()
             c.drawText(l, width / 2f, s + labelH * 0.62f + s * 0.05f * f, labelPaint)
         }
     }
@@ -390,6 +407,9 @@ class ControlCenter(private val home: HomeScreen) : FrameLayout(home.ctx) {
     private var timerButton: CcButton? = null
     private var dndButton: CcButton? = null
     private var playButton: CcButton? = null
+    /** Screen Mirroring's tile while the General tab shows; it follows the receiver's status pushes. */
+    private var mirrorButton: CcButton? = null
+    private val mirrorListener = AirPlay.Listener { s -> mirrorButton?.let { showMirror(it, s) } }
     /** A sub-view (timer choices, profile confirm) is shown; Back returns to the tab's buttons. */
     private var subView: (() -> Unit)? = null
     private var playing: NowPlaying? = null
@@ -455,6 +475,7 @@ class ControlCenter(private val home: HomeScreen) : FrameLayout(home.ctx) {
         subView = null
         ui.removeCallbacks(tick)
         unwatchSession()
+        unwatchMirror()
         val done = {
             visibility = View.GONE
             body.removeAllViews()
@@ -470,6 +491,9 @@ class ControlCenter(private val home: HomeScreen) : FrameLayout(home.ctx) {
             .withEndAction { done() }
             .start()
     }
+
+    /** The home is going: stop following the receiver. */
+    fun release() = unwatchMirror()
 
     /** Back: leaves a sub-view first, then closes. */
     fun back() {
@@ -519,6 +543,7 @@ class ControlCenter(private val home: HomeScreen) : FrameLayout(home.ctx) {
         title.text = t.title
         body.removeAllViews()
         timerButton = null; dndButton = null; playButton = null
+        unwatchMirror()
         if (t != Tab.NOW_PLAYING) unwatchSession()
         when (t) {
             Tab.PROFILE -> buildProfile()
@@ -612,9 +637,42 @@ class ControlCenter(private val home: HomeScreen) : FrameLayout(home.ctx) {
         val fire = button(Glyph.OPEN, "TV Settings") { close(instant = true) { home.openFireSettings() } }
         val gear = button(Glyph.GEAR, "GlassOS") { close(instant = true) { home.openSettings() } }
         val scenery = button(Glyph.SCENE, "Scenery") { close(instant = true) { home.openSceneBrowser() } }
+        // Only where Screen Mirroring can run (Fire OS 6 or later, a build with the receiver).
+        val mirror = if (!ScreenMirroring.available(ctx)) null else button(Glyph.MIRROR, "Screen Mirroring") { mirrorClick() }
         // Only while the aerial scenery plays.
         val nextScene = if (home.currentScene() == null) null else button(Glyph.NEXT, "Next Scene") { home.skipScene(1) }
-        body.addView(grid(listOfNotNull(power, wifi, dnd, audio, timer, pads, acc, pc, fire, gear, scenery, nextScene)))
+        body.addView(grid(listOfNotNull(power, wifi, dnd, audio, timer, pads, acc, pc, fire, gear, scenery, mirror, nextScene)))
+        if (mirror != null) {
+            mirrorButton = mirror
+            AirPlay.addListener(mirrorListener)
+        }
+    }
+
+    /**
+     * Screen Mirroring's tile: during a session it brings the receiver screen up; otherwise it turns Screen Mirroring
+     * on or off at once (an off and on in quick succession is serialised by the facade, which never waits here).
+     */
+    private fun mirrorClick() {
+        val ctx = context
+        val p = home.prefs
+        when (MirrorState.tileAction(p.airplayOn, AirPlay.snapshot.status)) {
+            MirrorState.Action.SHOW -> close(instant = true) { ScreenMirroring.show(ctx) }
+            MirrorState.Action.STOP -> ScreenMirroring.turn(ctx, p, false, "Control Center")
+            MirrorState.Action.START -> ScreenMirroring.turn(ctx, p, true, "Control Center")
+        }
+        mirrorButton?.let { showMirror(it, AirPlay.snapshot) }
+    }
+
+    private fun showMirror(b: CcButton, s: AirPlay.Snapshot) {
+        val on = home.prefs.airplayOn
+        b.on = on
+        b.label = MirrorState.tileLabel(on, s.status)
+    }
+
+    private fun unwatchMirror() {
+        if (mirrorButton == null) return
+        mirrorButton = null
+        AirPlay.removeListener(mirrorListener)
     }
 
     /** A standard Settings page (Android TV and Google TV). */

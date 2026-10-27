@@ -38,15 +38,16 @@ class PublicRedirect(HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def fetch(url, output=None, limit=5 * 1024**2, log=lambda _: None):
-    """Bounded streaming with a disk reserve, time limit, and checked redirects."""
+def fetch(url, output=None, limit=5 * 1024**2, log=lambda _: None, timeout=30):
+    """Bounded streaming with a disk reserve, time limit, and checked redirects. `timeout` bounds the connection and
+    each read, in seconds."""
     req = Request(public_url(url), headers={"User-Agent": "GlassOS-Aerial-Manager/1.5", "Accept-Encoding": "identity"})
     started = time.monotonic()
     data = bytearray()
     total = 0
     next_log = 100 * 1024**2
     try:
-        with build_opener(PublicRedirect()).open(req, timeout=30) as response:
+        with build_opener(PublicRedirect()).open(req, timeout=timeout) as response:
             length = response.headers.get("Content-Length")
             if length and int(length) > limit:
                 raise ValueError("Download exceeds the size limit.")

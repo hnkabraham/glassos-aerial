@@ -33,8 +33,8 @@ android {
         applicationId = "io.github.abhishekkaisar.glassos.aerial"
         minSdk = 22
         targetSdk = 28
-        versionCode = 8
-        versionName = "1.5.0-aerial.1"
+        versionCode = 9
+        versionName = "1.6.0-aerial.1"
         buildConfigField("String", "TMDB_API_KEY", "\"${tmdbKey.replace("\"", "")}\"")
     }
 
@@ -62,6 +62,11 @@ android {
         }
     }
     buildFeatures { buildConfig = true }
+    // Native code comes only from :airplay, which builds armeabi-v7a and arm64-v8a; tools/airplay/check_apk.py fails
+    // CI if any other ABI appears (an abiFilters here would add lint's ChromeOsAbiSupport warning instead).
+    // useLegacyPackaging is explicit, though it is the minSdk-22 default: libraries stay compressed in the APK and
+    // are extracted at install.
+    packaging { jniLibs { useLegacyPackaging = true } }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -79,6 +84,8 @@ android {
 }
 
 dependencies {
+    // Screen mirroring receiver; see airplay/build.gradle.kts for the -Pglassos.airplay.native=false switch.
+    implementation(project(":airplay"))
     // Unit tests of the pure logic (playlist, schedules, folders, backup validation) on the JVM. org.json is the
     // reference implementation, standing in for Android's built-in copy, which is a stub in local unit tests.
     testImplementation("junit:junit:4.13.2")

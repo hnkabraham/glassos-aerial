@@ -580,7 +580,7 @@ progress {
 }
 .period {
   display: grid;
-  grid-template-columns: 60px 150px 1fr 40px;
+  grid-template-columns: 60px 130px 150px 1fr 40px;
   gap: 20px;
   align-items: center;
   padding: 22px;
@@ -599,6 +599,11 @@ progress {
 .period label {
   font-size: 10px;
   letter-spacing: 0.6px;
+}
+/* Today's time for a sunrise or sunset entry, under its controls. */
+.period .period-preview {
+  grid-column: 2 / -1;
+  margin: -8px 0 0;
 }
 .remove {
   background: none;
@@ -816,9 +821,12 @@ dialog label {
     height: 110px;
   }
   .period {
-    grid-template-columns: 30px 105px 1fr 20px;
+    grid-template-columns: 30px 1fr 1fr 20px;
     padding: 14px;
     gap: 8px;
+  }
+  .period .period-collection-label {
+    grid-column: 2 / 4;
   }
   .schedule-footer {
     display: block;
@@ -937,4 +945,154 @@ dialog label {
   .theme-swatches .swatch {
     flex: 1;
   }
+}
+
+/* Daily rhythm: where the TV's sun times come from. */
+.sun-panel {
+  margin-top: 40px;
+  max-width: 840px;
+}
+.sun-panel .section-heading {
+  margin-top: 0;
+}
+.sun-fields {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 14px;
+  margin-top: 18px;
+}
+@media (max-width: 720px) {
+  .sun-fields {
+    grid-template-columns: 1fr;
+  }
+}
+.sun-found {
+  margin: 14px 0 0;
+  font-size: 12px;
+  color: var(--accent);
+}
+.sun-found.warn {
+  color: #e1c08d;
+}
+
+/* TV controls: one panel per control, side by side when there is room. */
+.tv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr));
+  gap: 18px;
+  align-items: start;
+}
+.tv-panel .section-heading {
+  margin-top: 0;
+}
+.tv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 20px 0 4px;
+}
+dialog code {
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #d9e5e7;
+  overflow-wrap: anywhere;
+}
+.code-dots {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin: 22px 0;
+}
+.code-dots i {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1.5px solid #748c81;
+}
+.code-dots i.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+/* The remote's D-pad, then its media row. */
+.code-pad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 88px));
+  gap: 8px;
+  justify-content: center;
+}
+.key {
+  background: #18232b;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px 4px 7px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.key:hover {
+  border-color: #748c81;
+}
+.key:active {
+  background: #21312d;
+}
+.key span {
+  display: block;
+  font-size: 20px;
+  line-height: 1.3;
+  color: var(--text);
+}
+.key.up {
+  grid-area: 1 / 2;
+}
+.key.left {
+  grid-area: 2 / 1;
+}
+.key.right {
+  grid-area: 2 / 3;
+}
+.key.down {
+  grid-area: 3 / 2;
+}
+.key.media {
+  grid-row: 4;
+  margin-top: 10px;
+}
+.code-error {
+  color: #e1c08d;
+  text-align: center;
+}
+.dialog-actions .text-button {
+  margin-right: auto;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+/* The screensaver dialog: the settings that change, and the two the user may also turn off. */
+.setting-list {
+  margin: 10px 0 4px;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.setting-list li {
+  margin: 5px 0;
+}
+label.option {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 14px 0;
+  line-height: 1.6;
+}
+label.option input {
+  display: inline-block;
+  width: auto;
+  margin: 3px 0 0;
+  flex: none;
+}
+label.option .setting {
+  display: block;
 }

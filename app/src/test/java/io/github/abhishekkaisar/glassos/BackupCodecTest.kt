@@ -17,9 +17,11 @@ class BackupCodecTest {
         hidden = listOf("com.amazon.weather"),
         folders = folders,
         display = DisplayBackup(sound = false, topShelf = "aerial", scene = "scene:ocean", cinemaDelaySec = 120, cinemaClock = true,
-            nightEnabled = true, nightStart = 22 * 60, nightEnd = 7 * 60, nightLevel = 2, reduceTransparency = true, reduceMotion = false, mostUsed = true),
+            nightEnabled = true, nightStart = 22 * 60, nightEnd = 7 * 60, nightLevel = 2, nightSun = true, nightStartOffset = 30,
+            nightEndOffset = -15, reduceTransparency = true, reduceMotion = false, mostUsed = true),
         scenery = SceneryBackup(shuffle = true, favoritesOnly = false, labels = true,
-            favorites = listOf("01 - Golden Gate, San Francisco.mp4"), hidden = listOf("09-night.mov")))
+            favorites = listOf("01 - Golden Gate, San Francisco.mp4"), hidden = listOf("09-night.mov")),
+        mirroring = MirroringBackup(on = true, name = "Living Room ’TV’", pin = true, resolution = "720p", syncVolume = false))
 
     private fun ok(text: String): BackupData = when (val r = BackupCodec.decode(text)) {
         is BackupResult.Ok -> r.data
@@ -46,16 +48,81 @@ class BackupCodecTest {
     @Test fun neverExportsPrivateOrDeviceSettings() {
         val text = BackupCodec.encode(full, "x", 0L)
         for (k in listOf("tmdbKey", "country", "setupDone", "askedStorage", "replaceHome", "sleepAt",
-                "position", "clip\"", "file:", "/storage", "/sdcard", "password", "serial", "foregroundMillis", "usageHistory")) {
+                "position", "clip\"", "file:", "/storage", "/sdcard", "password", "serial", "foregroundMillis", "usageHistory",
+                "sunLat", "sunLon", "sunLabel", "latitude", "longitude", "lockCode", "locked",
+                // Screen Mirroring: its pairing identity, private prefs and advanced settings stay on the TV.
+                "airplay", "pem", "mac", "h265", "max_fps", "advertise", "benchmark", "allow_new_conn")) {
             assertFalse("must not contain $k", text.contains(k))
         }
         val o = JSONObject(text)
-        assertEquals(setOf("format", "version", "app", "exportedAt", "layout", "folders", "display", "scenery"), o.keySet())
+        assertEquals(setOf("format", "version", "app", "exportedAt", "layout", "folders", "display", "scenery", "screenMirroring"), o.keySet())
+        assertEquals(setOf("on", "name", "pin", "resolution", "syncVolume"), o.getJSONObject("screenMirroring").keySet())
+    }
+
+    @Test fun screenMirroringRoundTripsAndOlderBackupsKeepIt() {
+        val m = ok(BackupCodec.encode(full, "x", 0L)).mirroring!!
+        assertEquals(MirroringBackup(on = true, name = "Living Room ’TV’", pin = true, resolution = "720p", syncVolume = false), m)
+        // Empty is the TV's own name; every resolution choice is valid.
+        for (res in listOf("auto", "1080p", "720p")) {
+            val d = ok(doc { getJSONObject("screenMirroring").put("name", "").put("resolution", res) }).mirroring!!
+            assertEquals("", d.name)
+            assertEquals(res, d.resolution)
+        }
+        // A 63-byte name (one DNS-SD label) is the longest allowed.
+        assertEquals(21, ok(doc { getJSONObject("screenMirroring").put("name", "€".repeat(21)) }).mirroring!!.name!!.length)
+        // A backup from before Screen Mirroring (or with a partial section) leaves the rest as it is.
+        assertEquals(null, ok(doc { remove("screenMirroring") }).mirroring)
+        val partial = ok(doc { put("screenMirroring", JSONObject().put("pin", false)) }).mirroring!!
+        assertEquals(MirroringBackup(pin = false), partial)
+        assertTrue(full.summary().endsWith("Screen Mirroring settings"))
+    }
+
+    @Test fun rejectsBadScreenMirroring() {
+        rejects(doc { put("screenMirroring", "on") }, "screenMirroring", "object")
+        rejects(doc { getJSONObject("screenMirroring").put("on", "true") }, "screenMirroring.on", "true or false")
+        rejects(doc { getJSONObject("screenMirroring").put("pin", 1) }, "screenMirroring.pin", "true or false")
+        rejects(doc { getJSONObject("screenMirroring").put("syncVolume", JSONObject()) }, "screenMirroring.syncVolume")
+        rejects(doc { getJSONObject("screenMirroring").put("resolution", "4k") }, "screenMirroring.resolution", "auto, 1080p, 720p")
+        rejects(doc { getJSONObject("screenMirroring").put("resolution", "1080P") }, "screenMirroring.resolution")
+        rejects(doc { getJSONObject("screenMirroring").put("resolution", 1080) }, "screenMirroring.resolution", "text")
+        rejects(doc { getJSONObject("screenMirroring").put("name", 7) }, "screenMirroring.name", "text")
+        rejects(doc { getJSONObject("screenMirroring").put("name", "Den\nTV") }, "screenMirroring.name", "63 bytes")
+        rejects(doc { getJSONObject("screenMirroring").put("name", "Den\u0007") }, "screenMirroring.name")
+        rejects(doc { getJSONObject("screenMirroring").put("name", " Den") }, "screenMirroring.name")
+        rejects(doc { getJSONObject("screenMirroring").put("name", "x".repeat(64)) }, "screenMirroring.name", "63 bytes")
+        rejects(doc { getJSONObject("screenMirroring").put("name", "\u20ac".repeat(22)) }, "screenMirroring.name")
+    }
+
+    @Test fun exportDropsAnInvalidMirroringValue() {
+        val messy = full.copy(mirroring = MirroringBackup(on = false, name = "Den\tTV", resolution = "4k"))
+        assertEquals(MirroringBackup(on = false), ok(BackupCodec.encode(messy, "x", 0L)).mirroring)
     }
 
     @Test fun olderBackupsLeaveAppOrderUnspecified() {
         val d = ok(doc { getJSONObject("display").remove("mostUsed") })
         assertEquals(null, d.display!!.mostUsed)
+    }
+
+    @Test fun nightTravelsAsOne() {
+        val night = JSONObject(BackupCodec.encode(full, "x", 0L)).getJSONObject("display").getJSONObject("night")
+        assertEquals(setOf("enabled", "start", "end", "level", "sun", "startOffset", "endOffset"), night.keySet())
+        // A backup from before sun mode restores clock times, even onto a TV that follows the sun.
+        val old = ok(doc { getJSONObject("display").getJSONObject("night").apply { remove("sun"); remove("startOffset"); remove("endOffset") } })
+        assertEquals(false, old.display!!.nightSun)
+        assertEquals(null, old.display!!.nightStartOffset)
+        assertEquals(22 * 60, old.display!!.nightStart)
+        // No night section at all keeps the current night settings.
+        assertEquals(null, ok(doc { getJSONObject("display").remove("night") }).display!!.nightSun)
+    }
+
+    @Test fun rejectsBadNightSunFields() {
+        rejects(doc { getJSONObject("display").getJSONObject("night").put("sun", "yes") }, "display.night.sun", "true or false")
+        rejects(doc { getJSONObject("display").getJSONObject("night").put("startOffset", 241) }, "display.night.startOffset", "240")
+        rejects(doc { getJSONObject("display").getJSONObject("night").put("endOffset", -241) }, "display.night.endOffset")
+        rejects(doc { getJSONObject("display").getJSONObject("night").put("endOffset", 1.5) }, "display.night.endOffset", "whole number")
+        val d = ok(doc { getJSONObject("display").getJSONObject("night").put("startOffset", -240).put("endOffset", 240) })
+        assertEquals(-240, d.display!!.nightStartOffset)
+        assertEquals(240, d.display!!.nightEndOffset)
     }
 
     @Test fun automaticOrderPreferenceIsStrictlyBoolean() {
@@ -169,6 +236,34 @@ class BackupCodecTest {
     }
 
     @Test fun summary() {
-        assertEquals("2 top row items, 2 folders, 1 hidden app, 1 favourite scene, 1 hidden scene, display settings", full.summary())
+        assertEquals("2 top row items, 2 folders, 1 hidden app, 1 favourite scene, 1 hidden scene, display settings, " +
+            "Screen Mirroring settings", full.summary())
+    }
+
+    @Test fun aTvWithoutScreenMirroringNeitherNamesNorRestoresIt() {
+        val here = full.forThisTv(mirroring = false)
+        assertEquals(null, here.mirroring)
+        assertFalse(here.summary().contains("Screen Mirroring"))
+        // Everything else, and whether the layout replaces the current one, stays.
+        assertEquals(full.copy(mirroring = null), here)
+        assertTrue(here.hasLayout)
+        assertEquals(full, full.forThisTv(mirroring = true))
+        assertEquals(null, here.mirroringWarning(on = false, pin = false))
+    }
+
+    @Test fun restoringSaysPlainlyWhenItTurnsScreenMirroringOn() {
+        val on = full.mirroring!!
+        assertTrue(full.mirroringWarning(on = false, pin = false)!!.contains("with the code it shows"))
+        val noPin = full.copy(mirroring = on.copy(pin = false)).mirroringWarning(on = false, pin = true)!!
+        assertTrue(noPin, noPin.contains("any device on your network") && noPin.contains("Require PIN is off"))
+        // A backup without the PIN setting keeps this TV's.
+        assertTrue(full.copy(mirroring = on.copy(pin = null)).mirroringWarning(on = false, pin = true)!!.contains("code"))
+        assertTrue(full.copy(mirroring = on.copy(pin = null)).mirroringWarning(on = false, pin = false)!!.contains("no code"))
+        // Already on, or the backup leaves it off: nothing to warn about.
+        assertEquals(null, full.mirroringWarning(on = true, pin = false))
+        assertEquals(null, full.copy(mirroring = on.copy(on = false)).mirroringWarning(on = false, pin = false))
+        assertEquals(null, full.copy(mirroring = on.copy(on = null)).mirroringWarning(on = false, pin = false))
+        assertEquals(null, BackupData().mirroringWarning(on = false, pin = false))
+        assertFalse(full.mirroringWarning(on = false, pin = false)!!.contains("AirPlay"))
     }
 }

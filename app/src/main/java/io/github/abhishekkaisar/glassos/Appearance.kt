@@ -16,7 +16,17 @@ object Themes {
     @Volatile var current = all.first()
 }
 
-/** Four corners, visited without adjacent repeated positions. Clock stays within the TV's safe margins. */
+/**
+ * Four corners (0 top left, 1 top right, 2 bottom right, 3 bottom left), visited without adjacent repeated positions.
+ * Clock stays within the TV's safe margins.
+ */
 object CinemaPosition {
     fun corner(elapsedMinutes: Long, moving: Boolean): Int = if (moving) ((elapsedMinutes % 4L + 4L) % 4L).toInt() else 2
+
+    /**
+     * The scene name's corner: top left, or bottom left while the clock (its corner, null when it is not shown) has
+     * the top left. The clock goes on to the top right from there; if it later moves into the name's corner, the name
+     * hides (or, the Top Shelf's name with its keys, moves to this corner again).
+     */
+    fun labelCorner(clockCorner: Int?): Int = if (clockCorner == 0) 3 else 0
 }

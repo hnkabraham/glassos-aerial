@@ -18,6 +18,9 @@ object Platform {
     /** Amazon's home on Fire TV. */
     const val FIRE_HOME = "com.amazon.tv.launcher"
 
+    /** Fire OS's dream service delegates to this separately launchable Ambient Experience activity. */
+    const val FIRE_AMBIENT = "com.amazon.tv.ftvambient"
+
     /** Stock homes the watcher covers on Android TV and Google TV builds that keep their own home. */
     val ANDROID_TV_HOMES = listOf(
         "com.google.android.apps.tv.launcherx",
@@ -53,8 +56,7 @@ object Platform {
         out.addAll(ANDROID_TV_HOMES)
         if (isFireTv(ctx)) {
             out.add(FIRE_HOME)
-            // Fire OS's dream service delegates to this separately launchable Ambient Experience activity.
-            out.add("com.amazon.tv.ftvambient")
+            out.add(FIRE_AMBIENT)
         }
         val pm = ctx.packageManager
         try { pm.queryIntentActivities(homeIntent(), 0).forEach { out.add(it.activityInfo.packageName) } }
