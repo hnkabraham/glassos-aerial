@@ -14,7 +14,7 @@
 - `tools/airplay/make_source_bundle.sh` builds `glassos-aerial-<version>-src.tar.gz` (the tracked files with the vendored sources and the OpenSSL tarball, without build outputs or keys; untracked files only with `--include-untracked`, listed) for releases that include the receiver.
 - Not yet: video handover from apps (HLS), Apple Lossless audio (no FFmpeg). Tested on an Android TV emulator with simulated senders; Fire TV and real iPhone and Mac sessions are untested. 136 + 42 JVM tests (Screen Mirroring's labels and start rule, backups, licences) and 97 Python tests pass.
 
-## GlassOS Aerial 1.6.0-aerial.1 (fork, unreleased)
+## GlassOS Aerial 1.6.0-aerial.1 (fork, 2026-10-26)
 
 - **App lock:** hold OK on an app (top row, drawer or folder) and choose **Lock app**. The first lock sets a 4-button remote code (arrows, Rewind, Play/Pause, Fast forward), entered twice. Locked tiles show a padlock; opening one from a tile, folder or the Top Shelf asks for the code. **Unlock app** needs the code.
 - **Locked however it opens:** with Usage access and Display over other apps, a foreground guard covers a locked app with a code screen whenever it comes to the front outside GlassOS (a cast, Alexa or a remote button). Emulator-tested with a simulated outside launch; real casts and Alexa are untested. The right code lets it carry on until another app or Home comes forward or the TV sleeps; Back goes Home. The guard runs only while an app is locked and restarts after a reboot or update.
@@ -26,6 +26,7 @@
 - **GlassOS Manager > TV controls.** **App lock**, through a new ADB-only control channel in GlassOS that only the TV's ADB shell can call, sets a new code without the old one or turns the lock off, and the TV shows a notice for either; it can also allow casting protection (Display over other apps, one `appops` command). The code is never saved or logged on the Mac. **Screensaver** (plain ADB settings commands, with no notice on the TV) checks the TV's screensaver settings, makes GlassOS scenery the screensaver (optionally turning off Amazon Ambient Experience and Stay awake) and restores the values it replaced. It never restarts the TV or changes its sleep timers.
 - **GlassOS Manager > Daily rhythm:** each entry **Starts at** a time, sunrise or sunset, with a preview of today's time, and a **Sun times location** panel sends the TV a place or returns it to the time-zone estimate. **Look up from internet address** fills in the place from ipinfo.io, only when chosen, for you to check before saving; the manager keeps nothing from the reply.
 - Added JVM tests for app lock codes, hashing, retry limits, unlock sessions and screensaver starts, sun times (reference days including DST changes and polar days), time-zone places, sun-anchored schedules and night windows, and Python tests for the manager's lock, sun and screensaver controls. 117 JVM and 91 Python tests pass.
+- The release APK is built without Screen Mirroring's native receiver (`-Pglassos.airplay.native=false`), so that feature stays hidden. Its two install-time permissions (Wi-Fi multicast and wake lock) and its unexported, unused components are still in the manifest.
 
 ## GlassOS Aerial 1.5.0-aerial.1 (fork, 2026-10-24)
 

@@ -2,15 +2,15 @@
 
 **A quiet TV home screen with local aerial videos, your apps, and controls that work with the remote.**
 
-GlassOS Aerial is a fork of **[GlassOS](https://github.com/AbhishekKaisar/glassos-tv) by Abhishek Kaisar and contributors**, started from GlassOS 1.0.2-beta in October 2026. We kept their glass home screen and built it around silent scenery: videos of your own that play behind the app icons, stay on the device, pause when another app opens and resume when you come home. Around that we added cinema and night modes, folders, themes, app ordering and a Mac companion. On `main`, not yet released and so far tested only on an emulator: an app lock, a screensaver, sun-timed schedules and Screen Mirroring.
+GlassOS Aerial is a fork of **[GlassOS](https://github.com/AbhishekKaisar/glassos-tv) by Abhishek Kaisar and contributors**, started from GlassOS 1.0.2-beta in October 2026. We kept their glass home screen and built it around silent scenery: videos of your own that play behind the app icons, stay on the device, pause when another app opens and resume when you come home. Around that we added cinema and night modes, folders, themes, app ordering, an app lock, a screensaver, sun-timed schedules and a Mac companion. Screen Mirroring is in testing on `main`.
 
 ![GlassOS Aerial's home: the glass shelf of apps over a dusk scene](docs/validation/appearance-before.png)
 
 <sub>The home on the Android TV emulator, over GlassOS's built-in Dusk ocean scene. With clips in `Movies/GlassAerial` and **Settings > Top Shelf > Local aerial videos** chosen, your aerial video plays there instead.</sub>
 
-**[Download 1.5.0](https://github.com/hnkabraham/glassos-aerial/releases/tag/v1.5.0-aerial.1)** · **[User guide](docs/USAGE.md)** · **[Mac manager](manager/README.md)** · **[Screen Mirroring](docs/SCREEN-MIRRORING.md)** · **[Fire TV launcher & privacy setup](docs/FIRE-TV-SETUP.md)** · **[Changelog](CHANGELOG.md)** · **[Validation](docs/VALIDATION.md)**
+**[Download 1.6.0](https://github.com/hnkabraham/glassos-aerial/releases/tag/v1.6.0-aerial.1)** · **[User guide](docs/USAGE.md)** · **[Mac manager](manager/README.md)** · **[Screen Mirroring](docs/SCREEN-MIRRORING.md)** · **[Fire TV launcher & privacy setup](docs/FIRE-TV-SETUP.md)** · **[Changelog](CHANGELOG.md)** · **[Validation](docs/VALIDATION.md)**
 
-> **Release status.** The latest release is **1.5.0-aerial.1** (a GitHub pre-release, like every Aerial build). `main` also holds **1.6.0** (app lock, screensaver, sun times and TV controls on the Mac) and **Screen Mirroring** (off by default). Neither is released yet, and both have so far been tested only on the Android TV emulator, not on a Fire TV. In the tables below, **Since** is the first release with the feature; **1.6 (unreleased)** means `main` only.
+> **Release status.** The latest release is **1.6.0-aerial.1** (a GitHub pre-release, like every Aerial build), with the app lock, screensaver, sun times and TV controls on the Mac. It has so far been tested only on the Android TV emulator, not on a Fire TV; **[1.5.0](https://github.com/hnkabraham/glassos-aerial/releases/tag/v1.5.0-aerial.1)** is the last release checked on a Fire TV. **Screen Mirroring** is not in any release yet: it is on `main` only, off by default and emulator-tested. In the tables below, **Since** is the first release with the feature.
 
 ## A fork of GlassOS
 
@@ -36,8 +36,8 @@ GlassOS Aerial is a separate app: package `io.github.abhishekkaisar.glassos.aeri
 | Scenery browser | Poster thumbnails, next and previous, favourites, hidden scenes, scene names and shuffle without repeats. Left and Right on the Top Shelf change the scene. | 1.1 |
 | Collections and daily rhythm | Group scenes by place (coast, mountains, forest, desert, underwater, space, cities) and switch collections through the day. | 1.4 |
 | Playback recovery | Skips clips that stall, retries files that were repaired and picks up changed posters and titles. | 1.4 |
-| **Screensaver** | Your scenery as the TV's screensaver when it is idle in any app, with scene names, the cinema clock and night dimming. Chosen and undone from the Mac manager. [How it works](docs/USAGE.md#screensaver) | 1.6 (unreleased) |
-| **Sun times** | Night mode and daily-rhythm entries can follow sunset and sunrise, estimated from the TV's time zone or worked out for a place set from the Mac. [Details](docs/USAGE.md#sun-times) | 1.6 (unreleased) |
+| **Screensaver** | Your scenery as the TV's screensaver when it is idle in any app, with scene names, the cinema clock and night dimming. Chosen and undone from the Mac manager. [How it works](docs/USAGE.md#screensaver) | 1.6 |
+| **Sun times** | Night mode and daily-rhythm entries can follow sunset and sunrise, estimated from the TV's time zone or worked out for a place set from the Mac. [Details](docs/USAGE.md#sun-times) | 1.6 |
 
 ### Home and apps
 
@@ -51,7 +51,7 @@ GlassOS Aerial is a separate app: package `io.github.abhishekkaisar.glassos.aeri
 | Most-used app order | Ranks the top row, drawer and folders by recent time spent. Manual mode brings back your own arrangement. [How it ranks](docs/USAGE.md#most-used-app-order) | 1.2 |
 | Uninstall from Home | Hold OK on an app, choose Uninstall and confirm in the TV's own dialog, in either app-order mode and inside folders. | 1.3 |
 | Glass themes and app art | Five glass palettes, your own images for app tiles, and a cinema clock that moves to a new corner each minute. [Themes](docs/USAGE.md#themes-app-artwork-and-the-moving-clock) | 1.5 |
-| **App lock** | Hold OK on an app and choose Lock app. Opening it then needs a code of four remote buttons. With Usage access and Display over other apps, it is also meant to be covered when a phone casts to it or Alexa opens it (tested only with a simulated outside launch). The code and locked list never go into backups. It is a launcher lock, not a security boundary. [Limits](docs/USAGE.md#app-lock) | 1.6 (unreleased) |
+| **App lock** | Hold OK on an app and choose Lock app. Opening it then needs a code of four remote buttons. With Usage access and Display over other apps, it is also meant to be covered when a phone casts to it or Alexa opens it (tested only with a simulated outside launch). The code and locked list never go into backups. It is a launcher lock, not a security boundary. [Limits](docs/USAGE.md#app-lock) | 1.6 |
 
 ### Mac companion: GlassOS Manager
 
@@ -63,8 +63,8 @@ The manager is not a separate download: run it from a checkout of this repositor
 | Scenery library | Imports videos as silent H.264 with posters, checks every file, keeps to a storage budget and syncs with verified transfers. | 1.4 |
 | Scenery catalog | Browse Aerial-compatible JSON feeds, download chosen SDR videos and compress them on the Mac. | 1.5 |
 | Device profiles | Records each TV's hardware and software, keeps its latest health reports and compares checks with a saved baseline. | 1.5 |
-| **TV controls** | Set a new app lock code, turn the lock off or allow casting protection, and make GlassOS scenery the screensaver and undo it, all over ADB. Needs GlassOS 1.6 on the TV. [TV controls](manager/README.md#tv-controls) | 1.6 (unreleased) |
-| **Sun times location** | Daily rhythm entries can start at sunrise or sunset, and the manager can send the TV a place for its sun times: typed in, or looked up from ipinfo.io only when you ask. [Daily rhythm](manager/README.md#daily-rhythm) | 1.6 (unreleased) |
+| **TV controls** | Set a new app lock code, turn the lock off or allow casting protection, and make GlassOS scenery the screensaver and undo it, all over ADB. Needs GlassOS 1.6 on the TV. [TV controls](manager/README.md#tv-controls) | 1.6 |
+| **Sun times location** | Daily rhythm entries can start at sunrise or sunset, and the manager can send the TV a place for its sun times: typed in, or looked up from ipinfo.io only when you ask. [Daily rhythm](manager/README.md#daily-rhythm) | 1.6 |
 
 ### Screen Mirroring (unreleased)
 
@@ -102,14 +102,14 @@ GlassOS Manager, the Mac companion, runs in your browser on the Mac:
 
 ## Install and add scenery
 
-Current release: **1.5.0-aerial.1**, version code **8**. Download `GlassOS-Aerial-1.5.0.apk` from our release page. Our APK uses `io.github.abhishekkaisar.glassos.aerial` and its own signing key, so it installs alongside upstream GlassOS. Updating an earlier Aerial build with the same key preserves its settings. The 1.6.0 features and Screen Mirroring are not in this release; build from `main` to try them (see [Building](#building)). A self-built APK has a different signing key, so it cannot update the 1.5 release in place: try it on an emulator or a spare TV, or back up your settings, uninstall and restore. If Launcher Manager points at GlassOS Aerial, restore a working Home route first.
+Current release: **1.6.0-aerial.1**, version code **9**. Download `GlassOS-Aerial-1.6.0.apk` from our release page. Our APK uses `io.github.abhishekkaisar.glassos.aerial` and its own signing key, so it installs alongside upstream GlassOS. Updating an earlier Aerial build with the same key preserves its settings. Screen Mirroring is not in this release; build from `main` to try it (see [Building](#building)). A self-built APK has a different signing key, so it cannot update the release in place: try it on an emulator or a spare TV, or back up your settings, uninstall and restore. If Launcher Manager points at GlassOS Aerial, restore a working Home route first.
 
 For ADB installation, enable debugging on the TV, accept its computer authorization prompt, and substitute its address:
 
 ```sh
 TV="FIRE_TV_IP:5555"
 adb connect "$TV"
-adb -s "$TV" install -r GlassOS-Aerial-1.5.0.apk
+adb -s "$TV" install -r GlassOS-Aerial-1.6.0.apk
 adb -s "$TV" shell am start -n io.github.abhishekkaisar.glassos.aerial/io.github.abhishekkaisar.glassos.MainActivity
 ```
 
@@ -183,17 +183,18 @@ Backups include layout, folders, display and scenery choices. They exclude crede
 
 ## Tested configuration
 
-**1.5.0-aerial.1 (current release)**
+**1.5.0-aerial.1 (last release checked on a Fire TV)**
 
 - **66 JVM tests and 36 Python tests passed**, covering launcher behavior, schedules, backup validation, local API access and transfer failures.
 - Debug and signed release builds passed; lint reported **0 errors**.
 - Android TV API 31 emulator: glass themes from the remote, custom app art and its fallback, the moving cinema clock and cinema wake, and a settings export with the new fields. Browser checks covered catalog feed import.
 - Fire TV Stick 4K Max / Fire OS 8.1.8.5: in-place signed upgrade with settings, Home routing and all existing scenes preserved, 10 Home/Settings cycles and sleep/wake. Lifecycle checks verify decoder release on leaving Home.
 
-**`main`: 1.6.0 and Screen Mirroring (unreleased)**
+**1.6.0-aerial.1 (current release) and Screen Mirroring on `main`**
 
 - **136 app and 42 Screen Mirroring JVM tests and 97 Python tests passed**; lint reported **0 errors**; the native packaging and vendored-source checks passed.
 - Android TV emulator only: app lock (including a simulated outside launch), the screensaver, sun times, the Mac's TV controls, and Screen Mirroring with simulated senders.
+- The signed release APK (built without Screen Mirroring) was smoke-tested on a fresh Android TV API 31 emulator: first-run setup, Settings and Control Center with no Screen Mirroring entries, locking an app and opening it with the code, the screensaver as a preview and as the TV's screensaver, Night follows sunset and sunrise, the manager's ADB status calls and a settings backup, with no crashes.
 - Not yet installed on a Fire TV. Real casts, Alexa, Amazon's Ambient Experience and real iPhone or Mac mirroring sessions are untested.
 
 Persistent Home/startup and privacy opt-outs were checked after reboot during the earlier device setup; reboots have not been retested on a physical device since. Other physical models and older Fire OS versions are not validated. See [validation details and screenshots](docs/VALIDATION.md). The app retains minSdk 22; that is not a claim that the GhostLock/Launcher Manager method works on every supported Android version.
