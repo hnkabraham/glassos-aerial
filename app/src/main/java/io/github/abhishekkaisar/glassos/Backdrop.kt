@@ -7,11 +7,16 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.Paint
 
-/** One blurred backdrop layer: the bitmap, where it sits on screen (bitmap to screen) and its opacity. */
+/**
+ * One blurred backdrop layer: the bitmap, where it sits on screen (bitmap to screen) and its opacity, and a lightly
+ * blurred copy ([lite], at a quarter of the screen size) for the clear glass face and its refracting rim.
+ */
 class BackLayer {
     var bmp: Bitmap? = null
     val m = Matrix()
     var alpha = 1f
+    var lite: Bitmap? = null
+    val liteM = Matrix()
 }
 
 /**
@@ -22,6 +27,8 @@ class BackLayer {
 object Backdrop {
     val a = BackLayer()
     val b = BackLayer()
+    /** Live glass is feeding the layers from the playing video ([LiveGlass]): the hero leaves them alone. */
+    @Volatile var live = false
     val blurred: Bitmap? get() = a.bmp
     var screenW = 1920
     var screenH = 1080
@@ -37,12 +44,17 @@ object Backdrop {
     fun frame() { frameListeners.toList().forEach { it() } }
 
     /** Bitmap-to-screen matrix for a blurred copy drawn under a sharp transform [k] (sharp is screen sized). */
-    fun place(layer: BackLayer, bmp: Bitmap?, k: Matrix?, alpha: Float) {
+    fun place(layer: BackLayer, bmp: Bitmap?, k: Matrix?, alpha: Float, lite: Bitmap? = null) {
         layer.bmp = bmp
         layer.alpha = alpha
+        layer.lite = if (bmp == null) null else lite
         if (bmp == null) return
         layer.m.setScale(screenW / bmp.width.toFloat(), screenH / bmp.height.toFloat())
         if (k != null) layer.m.postConcat(k)
+        if (lite != null) {
+            layer.liteM.setScale(screenW / lite.width.toFloat(), screenH / lite.height.toFloat())
+            if (k != null) layer.liteM.postConcat(k)
+        }
     }
 }
 
@@ -78,6 +90,23 @@ object Blur {
         Canvas(out).drawBitmap(cur, 0f, 0f, Paint().apply { colorFilter = ColorMatrixColorFilter(cm); isFilterBitmap = true })
         cur.recycle()
         return out
+    }
+
+    /**
+     * The light blur for clear glass: a quarter of [src]'s size in halving steps, then box radius 1 three times
+     * (sigma about 1.4 texels, about 6 screen pixels at 1080p, close to what Apple's glass shows at this size). No
+     * colour change: the glass's own colour transform does that.
+     */
+    fun makeLite(src: Bitmap): Bitmap {
+        var cur = src
+        repeat(2) {
+            val next = Bitmap.createScaledBitmap(cur, (cur.width / 2).coerceAtLeast(1), (cur.height / 2).coerceAtLeast(1), true)
+            if (cur !== src) cur.recycle()
+            cur = next
+        }
+        if (cur === src) cur = src.copy(Bitmap.Config.ARGB_8888, true)
+        boxBlur(cur, 1)
+        return cur
     }
 
     /** In-place box blur (three passes approximate a Gaussian). */

@@ -54,7 +54,7 @@ class SetupView(private val home: HomeScreen) : FrameLayout(home.ctx) {
     private val panelW = Backdrop.screenW * 64 / 100
     private val panelH = Backdrop.screenH * 88 / 100
     val panel = GlassBox(context, dp(40f)).apply {
-        glass.tint = 0.10f; glass.dark = 0.34f; glass.sheen = 0.08f; shadowAlpha = 0.5f
+        glass.tint = 0.10f; glass.dark = 0.34f; glass.sheen = 0.08f; shadowAlpha = 0.5f; glass.textGuard = true
     }
     private val title = TextView(context).apply {
         textSize = 30f; typeface = Fonts.medium; setTextColor(Color.WHITE); gravity = Gravity.CENTER

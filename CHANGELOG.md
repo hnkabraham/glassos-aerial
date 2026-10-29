@@ -34,6 +34,22 @@
   rate is measured once from its frame times (also when they are rounded to milliseconds), not the container's rounded
   field. 29.97 fps scenery already fits 59.94 Hz, so nothing changes for it. The card shows the TV's current mode.
   Backups carry it.
+- **Liquid Glass:** the shelf, the user pill and the Now Playing capsule are clear glass: a light blur (a quarter of the
+  screen, about 6 px) through Apple's clear colour transform, dimmed up to 35% over bright art, with some frost and no
+  grain or gloss. Panels full of text (Settings, Control Center, menus, folders, Scenery, setup, the lock screen, the
+  move hint and the Now Playing card) stay frosted, and now darken over bright art as far as white text needs for
+  4.5:1; the pills' contrast guard models the clearer face (5:1). Every glass surface's rim bends the backdrop (five
+  bands, thinner towards the edge, over a bevel from about 14 dp on a pill to 22 dp on a panel; displacement
+  A(1 - sqrt(1 - x²)), mirrored at the very edge as on Apple's glass) and is lit by its slope, so the edge reads as
+  thick glass; a specular glint from a light at the top left (|n·L|², brightest on the top-left and bottom-right
+  corners) rises when the user pill is focused; a dark hairline shows only over bright art. The shelf drops its shadow
+  (it was cut off square at the corners). Settings values, captions and Control Center labels are brighter. No
+  per-frame blur; Reduce transparency is unchanged.
+- **Live glass:** **Settings > Live glass** (off by default until tried on a Fire TV) feeds the glass from the playing
+  video: about four times a second the frame on screen is copied at 480x270 (PixelCopy off the main thread on Android
+  7 and later, TextureView.getBitmap before), averaged with the last, blurred on a worker thread into both copies the
+  glass uses, and handed over in place of the clip's still; only the glass redraws. It runs while the home row shows the
+  video (in cinema mode, while the Now Playing card is up). Backups carry it.
 - After the upstream merge: Reduce motion again lands home tiles' focus at once (the merged focus code had dropped it);
   an open folder keeps its grid and focus when a package broadcast changes none of its apps; and with Most used order,
   a usage ranking held back during remote input no longer moves tiles when the app list reloads.

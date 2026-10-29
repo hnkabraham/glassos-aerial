@@ -40,6 +40,7 @@ GlassOS Aerial is a separate app: package `io.github.abhishekkaisar.glassos.aeri
 | **Sun times** | Night mode and daily-rhythm entries can follow sunset and sunrise, estimated from the TV's time zone or worked out for a place set from the Mac. [Details](docs/USAGE.md#sun-times) | 1.6 |
 | **Place captions** | Short notes that change as a scene plays, such as "Over the coast heading north", shown in cinema mode and the screensaver. They come from a captions file beside the clip. [Details](docs/USAGE.md#place-captions) | 1.7 (unreleased) |
 | **Match frame rate** | In the screensaver, the TV switches its refresh rate to suit the scenery when the two do not already fit, such as a library of 24 or 25 fps clips on a 60 Hz TV. Off by default; 29.97 fps scenery already plays smoothly at 59.94 Hz. [Details](docs/USAGE.md#match-frame-rate) | 1.7 (unreleased) |
+| **Liquid Glass** | Clearer glass for the shelf, the pills and Now Playing, with a rim that bends the scenery behind it and catches the light at its corners, closer to Apple's tvOS 26 look. **Live glass** (off by default until tried on a Fire TV) makes the glass follow the playing video. [Details](docs/USAGE.md#liquid-glass) | 1.7 (unreleased) |
 
 ### Home and apps
 
@@ -93,6 +94,10 @@ All TV captures are from the Android TV emulator. The plain colours and colour b
 | **Screen Mirroring** tile in Control Center | **Screen Mirroring** settings: status, TV name, PIN and resolution |
 | ![App order: Manual or Most used](docs/validation/usage-order-settings.png) | ![Settings with the Glass theme row](docs/validation/appearance-forest.png) |
 | **App order**: Manual or Most used | **Glass theme** and display settings |
+| ![Now Playing beside the time, with the weather](docs/validation/nowplaying-weather-home.jpg) | ![Cinema mode with the Now Playing card, a place caption and the clock with the weather](docs/validation/cinema-nowplaying-caption.jpg) |
+| **Now Playing** and **weather** (1.7, unreleased) | **Place captions** and the Now Playing card in cinema mode (1.7, unreleased) |
+| ![Before: the 1.6 glass](docs/validation/glass-before.jpg) | ![After: Liquid Glass](docs/validation/glass-after.jpg) |
+| Glass in 1.6 | **Liquid Glass** (1.7, unreleased): clear, with a lit, refracting rim |
 
 GlassOS Manager, the Mac companion, runs in your browser on the Mac:
 

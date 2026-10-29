@@ -35,7 +35,8 @@ data class DisplayBackup(
     /** Weather on or off and its unit; never the reading or the place it was for. */
     val weather: Boolean? = null,
     val weatherUnit: String? = null,
-    val matchFrameRate: Boolean? = null
+    val matchFrameRate: Boolean? = null,
+    val liveGlass: Boolean? = null
 )
 
 data class SceneryBackup(
@@ -168,6 +169,7 @@ object BackupCodec {
             s.weather?.let { j.put("weather", it) }
             s.weatherUnit?.takeIf { it in Weather.UNITS }?.let { j.put("weatherUnit", it) }
             s.matchFrameRate?.let { j.put("matchFrameRate", it) }
+            s.liveGlass?.let { j.put("liveGlass", it) }
             s.cinemaClock?.let { j.put("cinemaClock", it) }
             val n = JSONObject()
             s.nightEnabled?.let { n.put("enabled", it) }
@@ -322,7 +324,8 @@ object BackupCodec {
             customArt = bool(d, "customArt", "display.customArt"),
             nowPlaying = bool(d, "nowPlaying", "display.nowPlaying"),
             weather = bool(d, "weather", "display.weather"), weatherUnit = weatherUnit,
-            matchFrameRate = bool(d, "matchFrameRate", "display.matchFrameRate"))
+            matchFrameRate = bool(d, "matchFrameRate", "display.matchFrameRate"),
+            liveGlass = bool(d, "liveGlass", "display.liveGlass"))
     }
 
     private fun scenery(o: JSONObject): SceneryBackup? {

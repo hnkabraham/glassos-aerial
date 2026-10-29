@@ -133,6 +133,11 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("weather", false)
         set(v) { sp.edit().putBoolean("weather", v).apply() }
 
+    /** The glass follows the playing scenery video, not its still ([LiveGlass]); off until tried on a Fire TV. */
+    var liveGlass: Boolean
+        get() = sp.getBoolean("liveGlass", false)
+        set(v) { sp.edit().putBoolean("liveGlass", v).apply() }
+
     /** The screensaver changes the TV's refresh rate to suit the scenery when they do not fit (see [FrameRate]). */
     var matchFrameRate: Boolean
         get() = sp.getBoolean("matchFrameRate", false)
@@ -275,7 +280,8 @@ class Prefs(ctx: Context) {
             nightEnd = nightEnd, nightLevel = nightLevel, nightSun = nightSun, nightStartOffset = nightStartOffset,
             nightEndOffset = nightEndOffset, reduceTransparency = reduceTransparency, reduceMotion = reduceMotion,
             mostUsed = mostUsed, theme = theme, movingClock = movingClock, customArt = customArt, nowPlaying = nowPlaying,
-            weather = weather, weatherUnit = weatherUnit, matchFrameRate = matchFrameRate),
+            weather = weather, weatherUnit = weatherUnit, matchFrameRate = matchFrameRate,
+            liveGlass = liveGlass),
         scenery = SceneryBackup(shuffle = sceneShuffle, favoritesOnly = sceneFavoritesOnly, labels = sceneLabels, captions = placeCaptions,
             favorites = sceneFavorites.sorted(), hidden = sceneHidden.sorted(), collection = sceneCollection),
         mirroring = if (!includeMirroring) null else airplayConfig.let { c ->
@@ -304,6 +310,7 @@ class Prefs(ctx: Context) {
             s.weather?.let { e.putBoolean("weather", it) }
             s.weatherUnit?.let { e.putString("weatherUnit", it) }
             s.matchFrameRate?.let { e.putBoolean("matchFrameRate", it) }
+            s.liveGlass?.let { e.putBoolean("liveGlass", it) }
             s.cinemaClock?.let { e.putBoolean("cinemaClock", it) }
             s.nightEnabled?.let { e.putBoolean("night", it) }
             s.nightStart?.let { e.putInt("nightStart", it) }

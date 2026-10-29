@@ -284,7 +284,15 @@ class HeroView(ctx: Context, private val loader: (Slide) -> Loaded?) : View(ctx)
         out.setScale(s, s, if (l.index % 2 == 0) w * 0.3f else w * 0.7f, h * 0.45f)
     }
 
+    /** Live glass stopped: the glass shows this hero's slides again. */
+    fun showBackdrop() {
+        updateBackdrop()
+        Backdrop.changed()
+    }
+
     private fun updateBackdrop() {
+        // While Live glass feeds the layers from the video, it sets the pill's tone too.
+        if (Backdrop.live) return
         val c = cur
         val n = next
         Tone.blend(c, n, if (n != null) fade else 0f)
@@ -292,11 +300,11 @@ class HeroView(ctx: Context, private val loader: (Slide) -> Loaded?) : View(ctx)
         if (n != null) kbMatrix(n, kNext)
         when {
             c != null -> {
-                Backdrop.place(Backdrop.a, c.blurred, kCur, 1f)
-                Backdrop.place(Backdrop.b, n?.blurred, kNext, fade)
+                Backdrop.place(Backdrop.a, c.blurred, kCur, 1f, c.lite)
+                Backdrop.place(Backdrop.b, n?.blurred, kNext, fade, n?.lite)
             }
             n != null -> {
-                Backdrop.place(Backdrop.a, n.blurred, kNext, 1f)
+                Backdrop.place(Backdrop.a, n.blurred, kNext, 1f, n.lite)
                 Backdrop.place(Backdrop.b, null, null, 0f)
             }
         }

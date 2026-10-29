@@ -25,6 +25,7 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         glass.tint = 0.10f
         glass.dark = 0.30f
         glass.sheen = 0.10f
+        glass.textGuard = true
         shadowAlpha = 0.5f
     }
     private val list = LinearLayout(context).apply {
@@ -42,7 +43,7 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
     private val sortHint = TextView(context).apply {
         textSize = 14f
         typeface = Fonts.medium
-        setTextColor(0x99FFFFFF.toInt())
+        setTextColor(0xB3FFFFFF.toInt())
         setPadding(dpi(20f), 0, dpi(20f), dpi(10f))
     }
     private val hiddenRow = RowView(context, "Hidden apps")
@@ -97,6 +98,7 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
     }
     private val sunRow = RowView(context, "Sun times")
     private var sunRoom = 0
+    private val liveGlassRow = RowView(context, "Live glass")
     private val transparencyRow = RowView(context, "Reduce transparency")
     private val motionRow = RowView(context, "Reduce motion")
     // Screen Mirroring (the airplay module), only where it can run: Fire OS 6 or later, in a build with the receiver.
@@ -126,7 +128,7 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
             "Mirroring in Control Center to see it."
         textSize = 14f
         typeface = Fonts.medium
-        setTextColor(0x99FFFFFF.toInt())
+        setTextColor(0xB3FFFFFF.toInt())
         setPadding(dpi(20f), 0, dpi(20f), dpi(10f))
     }
     /** Room for the status and name values beside their titles (see [fitValue]). */
@@ -188,7 +190,7 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
             text = "When Top Shelf art is unavailable"
             textSize = 15f
             typeface = Fonts.medium
-            setTextColor(0x99FFFFFF.toInt())
+            setTextColor(0xB3FFFFFF.toInt())
             setPadding(dpi(20f), dpi(8f), 0, dpi(2f))
         }
         list.addView(bgLabel)
@@ -200,7 +202,7 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         })
         list.addView(section("Scenery and display"))
         for (r in listOf(sceneryRow, shuffleRow, favOnlyRow, labelsRow, captionsRow, nowPlayingRow, weatherRow, cinemaRow, clockRow, movingClockRow, screensaverRow, themeRow, artRow,
-                nightRow, nightSunRow, nightStartRow, nightEndRow, nightLevelRow, sunRow, transparencyRow, motionRow)) {
+                nightRow, nightSunRow, nightStartRow, nightEndRow, nightLevelRow, sunRow, liveGlassRow, transparencyRow, motionRow)) {
             list.addView(r, rowLp())
             // Display modes are an API 23 feature (not on Fire OS 5).
             if (r === screensaverRow && FrameRate.supported) list.addView(frameRateRow, rowLp())
@@ -303,6 +305,7 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
             sunRow.titleView.paint.measureText(sunRow.titleView.text.toString()).toInt()
         sunRow.valueView.maxWidth = sunRoom
         transparencyRow.onClick = { act.prefs.reduceTransparency = !act.prefs.reduceTransparency; changed() }
+        liveGlassRow.onClick = { act.prefs.liveGlass = !act.prefs.liveGlass; changed() }
         motionRow.onClick = { act.prefs.reduceMotion = !act.prefs.reduceMotion; changed() }
         folderRow.onClick = { close(instant = true) { act.createFolder() } }
         mirrorOnRow.onClick = {
@@ -339,7 +342,7 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         text = t
         textSize = 15f
         typeface = Fonts.medium
-        setTextColor(0x99FFFFFF.toInt())
+        setTextColor(0xB3FFFFFF.toInt())
         setPadding(dpi(20f), dpi(14f), 0, dpi(6f))
     }
 
@@ -411,6 +414,8 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         screensaverRow.valueView.text = if (AerialDream.chosen(context)) "GlassOS scenery" else "${Platform.name(context)}\u2019s own"
         frameRateRow.valueView.text = onOff(p.matchFrameRate)
         transparencyRow.valueView.text = onOff(p.reduceTransparency)
+        liveGlassRow.valueView.text = onOff(p.liveGlass)
+        liveGlassRow.alpha = if (p.reduceTransparency) 0.55f else 1f
         motionRow.valueView.text = onOff(p.reduceMotion)
         backupRow.valueView.text = if (p.lastBackup.isEmpty()) "Documents/${Backup.FOLDER}" else p.lastBackup.substringAfterLast('/')
         backupRow.valueView.textSize = 14f
@@ -582,6 +587,7 @@ class AppMenu(private val act: HomeScreen) : FrameLayout(act.ctx) {
         glass.tint = 0.10f
         glass.dark = 0.30f
         glass.sheen = 0.10f
+        glass.textGuard = true
         shadowAlpha = 0.5f
     }
     private val list = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; clipChildren = false; clipToPadding = false }

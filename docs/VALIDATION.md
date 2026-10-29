@@ -1,3 +1,93 @@
+# GlassOS Aerial 1.7 (unreleased) validation
+
+Validated on October 28, 2026 on the Android TV API 31 emulator (ARM64, 1920 × 1080), debug build, on branch
+`feature/1.7`: the upstream focus fix, Now Playing, weather, place captions, Match frame rate, Liquid Glass and Live
+glass. **Not yet installed on a physical Fire TV.** The scenes are generated test clips and GlassOS's built-in night
+desert; the music is a debug-only demo session; the captions are invented; the weather is for the emulator's
+Los Angeles time-zone estimate.
+
+## Automated checks
+
+**156 app JVM tests and 98 Python tests passed**, with no failures or errors; lint reported **0 errors**. New JVM tests
+cover where the Now Playing card goes beside the clock and the scene name, weather codes, units, rounding the place
+in any locale, parsing and checking Open-Meteo's reply, which readings may show, captions files (order, limits,
+bad entries) and which caption is in force, frame-rate fitting on the inexact rates a Fire TV reports, measuring frame
+rates from frame times (also rounded to milliseconds), mixed-rate libraries, and backups of every new setting. A new
+Python test covers syncing a captions file (sent beside its video, refused when changed, left out when GlassOS would
+not read it). The upstream merge and each commit after it were also built, tested and linted on their own.
+
+## Now Playing, weather and captions
+
+| Home: Now Playing and the weather | Cinema mode: the card, a place caption and the clock |
+| --- | --- |
+| ![Now Playing capsule beside the time and weather pill](validation/nowplaying-weather-home.jpg) | ![Cinema mode with the Now Playing card, a caption and the clock](validation/cinema-nowplaying-caption.jpg) |
+
+![Settings: Place captions, Now Playing and Weather](validation/settings-scenery-rows.jpg)
+
+- **Now Playing** showed the demo session's cover, title and artist beside the user pill, in cinema mode and in the
+  screensaver, in a corner clear of the clock and the scene name. A pause left it up for 8 seconds, then it went;
+  play brought it back. Turned off, it went at once. Without Notification access the row read *Needs access*;
+  granting access with the home on screen started it (at the next minute here, where the emulator kept the listener
+  bound across a quick revoke and grant).
+- **Weather** asked Open-Meteo once for the rounded place, showed 66° and cloudy at night in the pill and the cinema
+  clock, cached the reading in its own preferences and asked again only when it was due.
+- **Place captions** changed at 0, 6, 12 and 18 seconds into the test clip in cinema mode and the screensaver, rose
+  above the clock or the Now Playing card in a bottom corner, and cleared when the clip changed.
+- **Match frame rate** measured both test clips at 29.970 fps from their frame times and, on the emulator's single
+  60 Hz mode, asked for no change. A mode switch can only be seen on the stick.
+
+## Liquid Glass
+
+| Before (1.6) | After |
+| --- | --- |
+| ![Home before: frosted, grainy shelf](validation/glass-before.jpg) | ![Home after: clear shelf with a lit, refracting rim](validation/glass-after.jpg) |
+
+Close-up, before on the left: the shelf's corner and the user pill.
+
+![Before and after close-ups of the shelf and the pill](validation/glass-detail.jpg)
+
+Live glass: the shelf following the playing test clip at three moments.
+
+![Three moments of the shelf following the video](validation/live-glass-frames.jpg)
+
+- Clear glass (the shelf, the pills) shows the scenery through it with no grain; the rim bends what lies behind and is
+  lit by its slope; the top-left corner catches the light; the focused pill lights up. Panels full of text (Settings,
+  Control Center, menus, folders, Scenery) keep their frosted look, and their secondary text is brighter.
+- Live glass copied the playing frame with PixelCopy about four times a second; its thread used about 4% CPU on the
+  emulator, and render thread time and frame times were within noise of Live glass off (16/22/30 ms against 17/22/27 ms
+  at the 50th, 90th and 99th percentiles). It stopped and started again cleanly through Settings, another app and
+  Home, with no errors.
+
+## Fixed during testing
+
+Two code-review workflows (a reviewer per area, then a skeptic re-checking each finding) and a three-way design
+critique (fidelity to Apple's glass, legibility at three metres, rendering artifacts) found these, all fixed:
+
+- **The merged focus code dropped Reduce motion** for home tiles; an open folder jumped focus on package broadcasts
+  that changed nothing; with Most used order, a held-back ranking could move tiles when the app list reloaded.
+- **Now Playing** did not start after access was granted with the home on screen; position updates re-read every
+  cover; the pause grace restarted on every callback; the card could cover the scene name or the caption line;
+  the capsule blinked as one home took over from the other and overlapped the move hint.
+- **Weather** ran on the home's and screensaver's only worker (holding up the scenery, and stuck for good if that
+  worker was shut down with the request queued); sent Android's default user agent, which names the TV's model; and
+  waited 10 minutes after a place change or a clock change.
+- **Captions** could show the last clip's captions over a new one and overlapped the clock or the scene name.
+- **Match frame rate** would have done nothing: a dream's window does not pass attribute changes on, so the window
+  manager is now told directly. It also measured only the first clip, misread millisecond timestamps, and slowed the
+  screensaver's first still.
+- **Glass:** the bending rim was too thin to see and its outermost band spilled half a pixel outside the glass; the
+  clear face lowered the pill's contrast below what its guard assumed; Settings over bright art fell below 4.5:1;
+  clear glass dimmed in steps; the shelf's shadow was cut off square at its corners.
+
+## Limits
+
+Only the Android TV API 31 emulator was used. Not tested: a Fire TV (Live glass's cost on its GPU, Fire OS's handling
+of PixelCopy, a real mode switch and the Match Original Frame Rate setting, Open-Meteo's certificate on Fire OS),
+real media apps and casts for Now Playing, Apple's captions on the converted aerials (made, but not yet on the TV),
+and Android 7.0 or earlier, where Weather says it is unavailable. GitHub Actions was not run.
+
+---
+
 # Screen Mirroring (unreleased) validation
 
 Validated on October 26, 2026 on the Android TV API 31 emulator (ARM64, 1920 × 1080), on top of 1.6.0-aerial.1, debug build. No iPhone, iPad or Mac was connected: mirrored video came from a debug-only feed that plays an MP4 through the receiver's own native callbacks, and pairing and discovery were driven by scripted RTSP requests over `adb forward` and `tools/airplay/probe.py`. **Not yet installed on a physical Fire TV.**

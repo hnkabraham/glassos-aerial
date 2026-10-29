@@ -87,6 +87,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     private var nowWatch: NowPlayingWatch? = null
     private var nowPlaying: NowPlaying? = null
     private lateinit var captionLine: CaptionLine
+    private var liveGlass: LiveGlass? = null
     /** About once a second in cinema mode: the place caption follows the playing clip. */
     private val captionTick = object : Runnable {
         override fun run() {
@@ -212,6 +213,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         aerial.release()
         nowWatch?.stop()
         nowWatch = null
+        liveGlass?.release()
+        liveGlass = null
         // Screen Mirroring's status listeners, if a panel was open.
         if (::settings.isInitialized) settings.release()
         if (::cc.isInitialized) cc.release()
@@ -277,6 +280,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             }
             onUnavailable = { if (browser.isOpen) browser.refresh() }
             onOwnerChanged = { updateHeroRunning() }
+            onPlayingChanged = { syncLiveGlass() }
         }
         root.addView(aerial, FrameLayout.LayoutParams(-1, -1))
         // With the aerial scenery, Left and Right on the Top Shelf change the scene and OK opens Scenery.
@@ -329,7 +333,10 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             glass.highlight = 0.62f
             glass.border = 0.10f
             glass.cacheStatic = true
-            shadowAlpha = 0.18f
+            glass.clear = true
+            // No shadow: the rows clip each child to its bounds (so off-screen rows are culled), which cut the shadow
+            // off square at the shelf's corners. The lit rim gives the glass its edge.
+            shadowAlpha = 0f
         }
         content.addView(shelf, FrameLayout.LayoutParams(sw - 2 * shelfMargin, tileH + 2 * shelfPadV).apply {
             leftMargin = shelfMargin
@@ -354,6 +361,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         // Move mode hint: a small glass pill at the top centre, clear of the shelf and the drawer rows.
         val pillH = ctx.dpi(30f)
         movePill = GlassBox(ctx, pillH / 2f).apply {
+            glass.textGuard = true
             glass.tint = 0.10f
             glass.dark = 0.34f
             glass.sheen = 0.06f
@@ -638,6 +646,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         exitCinema(instant = true)
         resumed = false
         syncNowPlaying()
+        syncLiveGlass()
         if (::aerial.isInitialized) aerial.setRunning(false)
         if (::appMenu.isInitialized) leaveMove()
     }
@@ -699,8 +708,21 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         val units = listOf("\u00B0F" to "f", "\u00B0C" to "c").let { if (Weather.fahrenheit(Weather.UNITS_AUTO, country)) it else it.reversed() }
         card("Weather", units.map { (label, u) -> label to { set(true, u) } } + ("Off" to { set(false, prefs.weatherUnit) }),
             "The temperature in the time pill, cinema mode and the screensaver, $where.\n\n" +
-            "GlassOS asks Open-Meteo (open-meteo.com) for it at most every 30 minutes while the home or the screensaver is on " +
-            "screen, sending only that place rounded to about 11 km. Weather data by Open-Meteo.com.")
+            "GlassOS asks Open-Meteo (open-meteo.com) for it every 30 minutes (10 after a failed try) while the home or the " +
+            "screensaver is on screen, sending only that place rounded to about 11 km and the unit. Weather data by Open-Meteo.com.")
+    }
+
+    /**
+     * Settings > Live glass: the glass follows the playing video while the home row shows it, or, in cinema mode, while
+     * the Now Playing card (the only glass then) is up. Otherwise the hero's still is the glass's backdrop.
+     */
+    private fun syncLiveGlass() {
+        if (!::aerial.isInitialized) return
+        val want = !released && prefs.liveGlass && !Effects.reduceTransparency && resumed && aerial.isShowing &&
+            (!cinema || nowCard.shown)
+        if (want) (liveGlass ?: LiveGlass(aerial, onFrame = { Backdrop.frame() }, onStop = { hero.showBackdrop() })
+            .also { liveGlass = it }).start()
+        else liveGlass?.stop()
     }
 
     /** Follows the media sessions while this home is in front and Now Playing is on; otherwise shows nothing. */
@@ -724,7 +746,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         nowPlaying = np
         // Not while an app is moved: the move hint sits at the top too.
         if (movingPkg == null) nowPill.show(np)
-        if (cinema) { placeNowCard(); nowCard.show(np) }
+        if (cinema) { placeNowCard(); nowCard.show(np); syncLiveGlass() }
         placeCaption()
     }
 
@@ -1946,6 +1968,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         nowPlaying?.let { placeNowCard(); nowCard.show(it) }
         placeCaption()
         if (prefs.placeCaptions) { main.removeCallbacks(captionTick); main.post(captionTick) }
+        syncLiveGlass()
         WLog.i("cinema on")
     }
 
@@ -1959,6 +1982,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         main.removeCallbacks(captionTick)
         captionLine.reset()
         placeCaption()
+        syncLiveGlass()
         if (instant) {
             home.alpha = 1f
             cinemaClock.alpha = 0f; cinemaClock.visibility = View.GONE
@@ -2098,6 +2122,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     fun settingsChanged() {
         Effects.load(prefs)
         syncNowPlaying()
+        syncLiveGlass()
         if (!prefs.placeCaptions && ::captionLine.isInitialized) { main.removeCallbacks(captionTick); captionLine.reset() }
         nightLevelShown = -1f
         applyNight()

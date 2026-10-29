@@ -258,6 +258,7 @@ class LockActivity : Activity() {
         val panel = GlassBox(this, dp(30f)).apply {
             glass.tint = 0.10f
             glass.dark = 0.30f
+            glass.textGuard = true
             glass.sheen = 0.10f
             shadowAlpha = 0.5f
         }

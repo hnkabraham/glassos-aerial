@@ -245,6 +245,24 @@ the screensaver starts and ends, and AV receivers may need a moment too. On Fire
 Display > **Match Original Frame Rate** may also need to be on. The card shows what the TV runs at now. The home never
 switches: every app launch would blank the TV.
 
+### Liquid Glass
+
+The shelf, the user pill and the Now Playing capsule are clear glass, as on tvOS 26: the scenery shows through lightly
+blurred, dimmed a little over bright art so their text stays readable, with no grain. Panels full of text (Settings,
+Control Center, menus, folders, Scenery, setup) stay frosted, and darken over bright art as far as their text needs.
+Every glass edge bends the scenery behind it, more on larger glass, and is lit by its slope, with a glint where the
+light from the top left meets it; the user pill lights up when focused. It is all drawn from blurs made once per
+image, never per frame. Reduce transparency still draws plain solid panels.
+
+### Live glass
+
+Settings > **Live glass** (off by default until it has been tried on a Fire TV for speed): while the scenery video
+plays behind the home, the glass follows the moving picture rather than the clip's still. About four times a second
+the frame on screen is copied at 480x270 (with PixelCopy, off the main thread, on Android 7 and later), averaged with the
+last one so the glass changes smoothly, blurred on a worker thread and handed to the glass; only the glass redraws. It
+runs only while the home row shows the video (in cinema mode, only while the Now Playing card is up), and stops with the
+video. Reduce transparency turns it off.
+
 ### Night mode
 
 Settings > **Night mode**, with **Night starts** and **Night ends** (Left and Right step half an hour; a window like
@@ -328,7 +346,7 @@ adb -s <new-tv> push glassos-aerial-backup-20261024-163012.json /sdcard/Document
 A backup holds only: the top row, drawer order and hidden apps, folders, the Top Shelf source and built-in
 fallback background, focus sounds, cinema, night (including Night follows and its offsets) and effects settings, the Manual/Most used preference, scenery favourites, hidden scenes,
 shuffle, favourites only, scene names and place captions, Now Playing, Weather on/off and its unit, Match frame rate,
-and Screen Mirroring's on/off state, TV name, Require PIN, Resolution and
+Live glass, and Screen Mirroring's on/off state, TV name, Require PIN, Resolution and
 Sender controls TV volume, where the TV and build have Screen Mirroring (restoring them starts or stops the receiver to
 match, and the confirmation says when it would turn it on; never its pairing identity). It never holds the TMDB key or other credentials, your name, photo or
 country, the sun times place, setup and permission state, Home replacement and routing, the sleep timer, playback positions, device

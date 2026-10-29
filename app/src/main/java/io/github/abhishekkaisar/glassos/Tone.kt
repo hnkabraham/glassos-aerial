@@ -59,13 +59,28 @@ object Tone {
         return 1.05f / (lin(eff.coerceIn(0f, 1f)) + 0.05f)
     }
 
-    fun pillGlass(bg: Float): Glass {
+    /**
+     * The face of clear glass ([GlassPainter.clear]) over a background [bg]: Apple's clear colour transform on the
+     * light blur (luma transfer 0.954 plus 0.126 white, dimmed up to 35% over bright art), with 24% of the frosted copy
+     * over it. Brighter than the background, so white text on it needs more dark than on frosted glass.
+     */
+    fun clearFace(bg: Float): Float {
+        val t = ((bg - 0.40f) / 0.40f).coerceIn(0f, 1f)
+        val k = 1f - Math.round(t * t * (3 - 2 * t) * 8f) * 0.35f / 8f
+        return 0.76f * minOf((0.954f * bg + 0.1255f) * k, 1f) + 0.24f * bg
+    }
+
+    fun pillGlass(bg: Float, clear: Boolean = false): Glass {
         val t = brightness(bg)
         val tint = 0.20f + (0.06f - 0.20f) * t
         var dark = 0.32f * t
-        // Then darken just enough for 4.5:1 with white text, up to 0.55 on near-white art.
+        // Then darken just enough for white text: 4.5:1 on frosted glass, 5:1 on clear glass (whose face is lighter;
+        // 13 dp text seen from across the room), up to 0.55 or 0.60 on near-white art.
+        val face = if (clear) clearFace(bg) else bg
+        val target = if (clear) 5f else 4.5f
+        val cap = if (clear) 0.60f else 0.55f
         var guard = 0
-        while (contrast(bg, tint, dark) < 4.5f && dark < 0.55f && guard++ < 40) dark += 0.01f
+        while (contrast(face, tint, dark) < target && dark < cap && guard++ < 60) dark += 0.01f
         val shadow = ((t - 0.7f) / 0.3f).coerceIn(0f, 1f)
         return Glass(tint, dark, shadow, t)
     }

@@ -150,7 +150,12 @@ class AerialVideoView(ctx: Context) : TextureView(ctx), TextureView.SurfaceTextu
     private var player: MediaPlayer? = null
     private var prepared = false
     private var surface: Surface? = null
-
+    /** The surface while a frame is on screen, for [captureFrame] on another thread; null otherwise. */
+    @Volatile private var showing: Surface? = null
+    /** The part of the video frame the centre crop shows, in video pixels; null when it shows all of it. */
+    @Volatile private var visible: android.graphics.Rect? = null
+    /** The video started or stopped showing frames (Live glass follows it). */
+    var onPlayingChanged: ((Boolean) -> Unit)? = null
     private var videoW = 0
     private var videoH = 0
     private val main = Handler(Looper.getMainLooper())
@@ -185,6 +190,30 @@ class AerialVideoView(ctx: Context) : TextureView(ctx), TextureView.SurfaceTextu
     fun current(): AerialClip? = if (enabled) playlist.current?.let { clips[it] } else null
 
     val isActive: Boolean get() = enabled
+
+    /** True while frames of the playing clip are on screen. */
+    val isShowing: Boolean get() = showing != null
+
+    /**
+     * Copies the frame on screen, cropped as it shows, into [into] at its size, then calls [done] on [handler]'s
+     * thread. Android 7 and later copy it on the calling thread with PixelCopy (call it off the main thread); before
+     * that TextureView.getBitmap runs on the main thread. False when nothing is showing or the copy failed.
+     */
+    fun captureFrame(into: android.graphics.Bitmap, handler: Handler, done: (Boolean) -> Unit) {
+        val s = showing
+        if (s == null || !s.isValid) { handler.post { done(false) }; return }
+        if (android.os.Build.VERSION.SDK_INT >= 24) {
+            try {
+                val crop = visible
+                val listener = android.view.PixelCopy.OnPixelCopyFinishedListener { r -> done(r == android.view.PixelCopy.SUCCESS) }
+                if (crop != null && android.os.Build.VERSION.SDK_INT >= 26) android.view.PixelCopy.request(s, crop, into, listener, handler)
+                else android.view.PixelCopy.request(s, into, listener, handler)
+            } catch (e: Exception) { handler.post { done(false) } } // The surface went away meanwhile.
+        } else main.post {
+            val ok = try { showing != null && getBitmap(into) != null } catch (e: Exception) { false }
+            handler.post { done(ok) }
+        }
+    }
 
     /** Where the playing clip is, in ms; null while nothing plays (preparing, paused for another app, released). */
     fun positionMs(): Long? {
@@ -320,6 +349,8 @@ class AerialVideoView(ctx: Context) : TextureView(ctx), TextureView.SurfaceTextu
                 if (mp === player && what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START && canPlay()) {
                     main.removeCallbacks(prepareTimeout)
                     animate().alpha(1f).setDuration(Effects.fade(450)).start()
+                    showing = surface
+                    onPlayingChanged?.invoke(true)
                 }
                 false
             }
@@ -348,6 +379,7 @@ class AerialVideoView(ctx: Context) : TextureView(ctx), TextureView.SurfaceTextu
     private fun closePlayer(save: Boolean = true) {
         main.removeCallbacks(prepareTimeout)
         main.removeCallbacks(watchdog)
+        if (showing != null) { showing = null; onPlayingChanged?.invoke(false) }
         val p = player ?: return
         player = null
         animate().cancel()
@@ -369,6 +401,11 @@ class AerialVideoView(ctx: Context) : TextureView(ctx), TextureView.SurfaceTextu
     private fun crop() {
         if (width <= 0 || height <= 0 || videoW <= 0 || videoH <= 0) return
         val scale = maxOf(width.toFloat() / videoW, height.toFloat() / videoH)
+        // The part of the frame on screen, for Live glass's copies.
+        val vw = Math.round(width / scale).coerceIn(1, videoW)
+        val vh = Math.round(height / scale).coerceIn(1, videoH)
+        visible = if (vw >= videoW - 1 && vh >= videoH - 1) null
+            else android.graphics.Rect((videoW - vw) / 2, (videoH - vh) / 2, (videoW + vw) / 2, (videoH + vh) / 2)
         setTransform(Matrix().apply {
             setScale(videoW * scale / width, videoH * scale / height, width / 2f, height / 2f)
         })
@@ -383,6 +420,7 @@ class AerialVideoView(ctx: Context) : TextureView(ctx), TextureView.SurfaceTextu
     override fun onSurfaceTextureSizeChanged(texture: SurfaceTexture, w: Int, h: Int) { crop() }
     override fun onSurfaceTextureUpdated(texture: SurfaceTexture) { }
     override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {
+        showing = null
         closePlayer()
         surface?.release()
         surface = null

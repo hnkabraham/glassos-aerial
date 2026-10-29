@@ -276,7 +276,7 @@ class CcButton(ctx: Context, private val size: Int, private val cellW: Int, glyp
     private val imgPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val m = Matrix()
     private val rect = RectF()
-    private val labelSize = ctx.dp(11.5f)
+    private val labelSize = ctx.dp(12.5f)
     private val labelPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = Fonts.medium; textSize = labelSize; color = Color.WHITE; textAlign = Paint.Align.CENTER
     }
@@ -348,7 +348,7 @@ class CcButton(ctx: Context, private val size: Int, private val cellW: Int, glyp
             } else Glyphs.draw(c, glyph, width / 2f, s / 2, s * 0.42f, col, gl)
         }
         if (label.isNotEmpty() && labelH > 0) {
-            labelPaint.alpha = ((0.7f + 0.3f * f) * 255).toInt()
+            labelPaint.alpha = ((0.85f + 0.15f * f) * 255).toInt()
             // A label a little too long for its cell ("Screen Mirroring") is set a little smaller rather than cut short.
             labelPaint.textSize = labelSize
             val room = width.toFloat() - dp(4f)
@@ -393,12 +393,13 @@ class ControlCenter(private val home: HomeScreen) : FrameLayout(home.ctx) {
         glass.highlight = 0.45f
         glass.border = 0.12f
         glass.cacheStatic = true
+        glass.textGuard = true
         shadowAlpha = 0.45f
     }
     private val column = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; clipChildren = false; clipToPadding = false }
     private val tabRow = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false; clipToPadding = false; gravity = Gravity.CENTER_VERTICAL }
     private val title = TextView(context).apply {
-        textSize = 15f; typeface = Fonts.medium; setTextColor(0xB3FFFFFF.toInt())
+        textSize = 15f; typeface = Fonts.medium; setTextColor(0xCCFFFFFF.toInt())
     }
     private val body = FrameLayout(context).apply { clipChildren = false; clipToPadding = false }
 

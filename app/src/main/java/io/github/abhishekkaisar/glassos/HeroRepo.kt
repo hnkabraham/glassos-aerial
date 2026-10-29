@@ -30,7 +30,9 @@ class Slide(
 }
 
 /** A decoded slide: the screen-sized image, its pre-blurred copy for the glass, and the title logo. */
-class Loaded(val slide: Slide, val sharp: Bitmap, val blurred: Bitmap, val logo: Bitmap?, val washed: Boolean = false) {
+class Loaded(val slide: Slide, val sharp: Bitmap, val blurred: Bitmap, val logo: Bitmap?, val washed: Boolean = false,
+             /** The light blur for clear glass (see [Blur.makeLite]); null keeps the frosted look. */
+             val lite: Bitmap? = null) {
     var bornClock = 0L
     var index = 0
     /** True once its texture has been uploaded to the GPU (drawn once, invisibly). */
@@ -283,14 +285,15 @@ object HeroRepo {
     fun load(ctx: Context, s: Slide, w: Int, h: Int): Loaded? = try {
         if (s.sceneId != null) {
             val wp = WallpaperStore.load(ctx, s.sceneId, w, h)
-            Loaded(s, wp.sharp, wp.blurred, null)
+            Loaded(s, wp.sharp, wp.blurred, null, lite = Blur.makeLite(wp.sharp))
         } else {
             val sharp = s.art?.let { WallpaperStore.decodeCrop(it, w, h) }
             if (sharp == null) null else {
                 // The glass samples the art without the title wash, so blur first, then bake the wash in.
                 val blurred = Blur.makeBackdrop(sharp)
+                val lite = Blur.makeLite(sharp)
                 val washed = s.kind == Slide.TITLE && bakeWash(sharp)
-                Loaded(s, sharp, blurred, s.logo?.let { decodeLogo(it, w * 36 / 100, h * 20 / 100) }, washed)
+                Loaded(s, sharp, blurred, s.logo?.let { decodeLogo(it, w * 36 / 100, h * 20 / 100) }, washed, lite)
             }
         }
     } catch (e: Throwable) { null }

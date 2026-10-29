@@ -388,7 +388,7 @@ class UserPill(ctx: Context) : View(ctx) {
         }
 
     private val glass = GlassPainter().apply {
-        tint = 0.20f; tintColor = 0xFFFFF4E8.toInt(); sheen = 0.10f; highlight = 0.40f; border = 0.14f; stroke = ctx.dp(0.6f)
+        tint = 0.20f; tintColor = 0xFFFFF4E8.toInt(); sheen = 0.10f; highlight = 0.40f; border = 0.14f; stroke = ctx.dp(0.6f); clear = true
     }
     private val focus = FocusAnim(this, 1.08f) { invalidate() }
     private val rect = RectF()
@@ -471,11 +471,12 @@ class UserPill(ctx: Context) : View(ctx) {
         GlowCache.draw(c, rect.width(), rect.height(), r, dp(8f), Color.BLACK, 0.22f + 0.2f * f, dp(3f), gp)
         GlowCache.draw(c, rect.width(), rect.height(), r, dp(10f), Color.WHITE, 0.28f * f, 0f, gp)
         // Adapts to the art behind it: light glass on dark art, a darker glass with a softer rim on bright art.
-        val g = Tone.pillGlass(Tone.pill)
+        val g = Tone.pillGlass(Tone.pill, clear = true)
         glass.tint = g.tint + 0.15f * f
         glass.dark = g.dark
-        glass.highlight = 0.40f - 0.18f * g.t
-        glass.border = 0.14f - 0.06f * g.t
+        // Focused glass lights up from within, as on tvOS: a brighter glint and rim.
+        glass.highlight = 0.40f - 0.18f * g.t + 0.45f * f
+        glass.border = 0.14f - 0.06f * g.t + 0.10f * f
         glass.draw(c, this, rect, r)
 
         val cy = height / 2f
@@ -576,7 +577,7 @@ open class RowView(ctx: Context, title: String) : LinearLayout(ctx) {
 
     private fun applyColours(f: Float) {
         titleView.setTextColor(lerpColor(0xF2FFFFFF.toInt(), 0xFF101218.toInt(), f))
-        valueView.setTextColor(lerpColor(0x99FFFFFF.toInt(), 0xFF50545E.toInt(), f))
+        valueView.setTextColor(lerpColor(0xCCFFFFFF.toInt(), 0xFF50545E.toInt(), f))
     }
 
     override fun onFocusChanged(gained: Boolean, direction: Int, previous: Rect?) {

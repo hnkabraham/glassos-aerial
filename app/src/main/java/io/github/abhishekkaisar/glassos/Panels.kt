@@ -236,6 +236,7 @@ class SceneBrowser(private val home: HomeScreen) : FrameLayout(home.ctx) {
     private val scrim = View(context).apply { setBackgroundColor(0x33000000) }
     val panel = GlassBox(context, dp(30f)).apply {
         glass.tint = 0.08f; glass.dark = 0.38f; glass.sheen = 0.06f; glass.highlight = 0.45f; shadowAlpha = 0.45f
+        glass.textGuard = true
     }
     private val title = TextView(context).apply { text = "Scenery"; textSize = 24f; typeface = Fonts.medium; setTextColor(Color.WHITE) }
     private val status = TextView(context).apply { textSize = 14f; typeface = Fonts.regular; setTextColor(0xB3FFFFFF.toInt()); maxLines = 2 }
@@ -516,7 +517,7 @@ class FolderPanel(private val home: HomeScreen) : FrameLayout(home.ctx) {
     private var mode = Mode.MEMBERS
     private val scrim = View(context).apply { setBackgroundColor(0x80000000.toInt()) }
     private val panelW = Backdrop.screenW * 72 / 100
-    val panel = GlassBox(context, dp(36f)).apply { glass.tint = 0.10f; glass.dark = 0.34f; glass.sheen = 0.08f; shadowAlpha = 0.5f }
+    val panel = GlassBox(context, dp(36f)).apply { glass.tint = 0.10f; glass.dark = 0.34f; glass.sheen = 0.08f; shadowAlpha = 0.5f; glass.textGuard = true }
     private val title = TextView(context).apply { textSize = 28f; typeface = Fonts.medium; setTextColor(Color.WHITE); gravity = Gravity.CENTER; maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
     private val subtitle = TextView(context).apply { textSize = 15f; typeface = Fonts.regular; setTextColor(0xB3FFFFFF.toInt()); gravity = Gravity.CENTER }
     private val body = FrameLayout(context).apply { clipChildren = true; clipToPadding = false }

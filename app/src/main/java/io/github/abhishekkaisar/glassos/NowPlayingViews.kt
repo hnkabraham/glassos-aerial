@@ -202,7 +202,7 @@ private class ArtPainter {
  */
 class NowPlayingPill(ctx: Context) : View(ctx) {
     private val glass = GlassPainter().apply {
-        tint = 0.20f; tintColor = 0xFFFFF4E8.toInt(); sheen = 0.10f; highlight = 0.40f; border = 0.14f; stroke = ctx.dp(0.6f)
+        tint = 0.20f; tintColor = 0xFFFFF4E8.toInt(); sheen = 0.10f; highlight = 0.40f; border = 0.14f; stroke = ctx.dp(0.6f); clear = true
     }
     private val gp = Paint()
     private val rect = RectF()
@@ -266,7 +266,7 @@ class NowPlayingPill(ctx: Context) : View(ctx) {
         rect.set(0f, 0f, width.toFloat(), height.toFloat())
         GlowCache.draw(c, rect.width(), rect.height(), r, dp(8f), Color.BLACK, 0.22f, dp(3f), gp)
         // The same adaptive glass as the user pill beside it.
-        val g = Tone.pillGlass(Tone.pill)
+        val g = Tone.pillGlass(Tone.pill, clear = true)
         glass.tint = g.tint
         glass.dark = g.dark
         glass.highlight = 0.40f - 0.18f * g.t
@@ -296,7 +296,7 @@ class NowPlayingPill(ctx: Context) : View(ctx) {
  * blurred backdrop of its own) it is a clear dark card instead of frosted glass.
  */
 class NowPlayingCard(ctx: Context, private val sampleBackdrop: Boolean) : View(ctx) {
-    private val glass = GlassPainter().apply { tint = 0.10f; dark = 0.28f; sheen = 0.08f; highlight = 0.36f; border = 0.16f; stroke = ctx.dp(0.8f) }
+    private val glass = GlassPainter().apply { tint = 0.10f; dark = 0.28f; sheen = 0.08f; highlight = 0.36f; border = 0.16f; stroke = ctx.dp(0.8f); textGuard = true }
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val sheenPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rim = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = ctx.dp(0.8f) }
