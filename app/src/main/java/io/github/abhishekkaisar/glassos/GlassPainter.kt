@@ -28,9 +28,9 @@ import kotlin.math.sqrt
  *    further in, most at the very rim. (Apple's rim also mirrors the content there; this one only bends it.)
  * 3. Shade and tint ([dark], [tint]); regular glass also gets a trace of grain and a top sheen ([grain], [sheen]),
  *    clear glass neither.
- * 4. Light on the rim: a dark hairline at the silhouette, a faint rim all round, and a specular glint: with the light
- *    from the top left, each part of the rim shines by how squarely it faces it (|n·L|²), so the top-left and
- *    bottom-right corners catch it most ([highlight], [border]).
+ * 4. Light on the rim: a dark edge over bright art, a faint rim all round, and a specular glint: with the light from
+ *    above and a little to the left ([light]), each part of the rim shines by how squarely it faces it (|n·L|²), so
+ *    the top edge and the top-left corner catch it most, and the bottom edge, facing away, some ([highlight], [border]).
  *
  * No per-frame blur: both blurs were made once per image. Each painter owns its own shaders, because on API 25 shader
  * matrices are shared by reference.
@@ -62,13 +62,15 @@ class GlassPainter {
         /** How much of the frosted copy lies over clear glass's face (Apple mixes a light and a fully diffused blur). */
         private const val FROST = 0.24f
         /**
-         * The light's usual direction on screen (top left), as an angle clockwise from the right, in degrees. The
-         * corner glints are built for it and turned when [light] differs.
+         * The light's usual direction on screen, as an angle clockwise from the right, in degrees: from above and a
+         * little to the left, so the long top edges (the shelf's, the panels') catch it well. The corner glints are
+         * built for it and turned when [light] differs.
          */
-        const val LIGHT = 225f
+        const val LIGHT = 240f
         /**
          * How tightly the glint gathers where the rim faces the light: |n·L| to this power, the same along the corners
-         * and the straight edges, so the glint has no step where they meet (the long top edge at half the corners').
+         * and the straight edges, so the glint has no step where they meet (the long top edge at three quarters of the
+         * top-left corner's).
          */
         private const val FALLOFF = 2.0
         /**
