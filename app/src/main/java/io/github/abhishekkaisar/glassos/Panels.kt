@@ -189,8 +189,9 @@ class CinemaClock(ctx: Context) : TextView(ctx) {
     fun update() {
         val t = time(context)
         val w = weather ?: run { text = t; return }
-        val s = android.text.SpannableStringBuilder(t).append("   ")
-        val px = (textSize * 0.5f).toInt().coerceAtLeast(1)
+        val s = android.text.SpannableStringBuilder(t).append("  ")
+        // The icon a little taller than the temperature's capitals, sitting on the same baseline.
+        val px = (textSize * 0.62f).toInt().coerceAtLeast(1)
         val at = s.length
         s.append("\u2600").setSpan(android.text.style.ImageSpan(context, WeatherIcon.bitmap(w.sky, w.day, px),
             android.text.style.DynamicDrawableSpan.ALIGN_BASELINE), at, at + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
