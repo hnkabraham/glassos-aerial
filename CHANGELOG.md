@@ -2,6 +2,9 @@
 
 ## Unreleased (fork)
 
+- After the upstream merge: Reduce motion again lands home tiles' focus at once (the merged focus code had dropped it);
+  an open folder keeps its grid and focus when a package broadcast changes none of its apps; and with Most used order,
+  a usage ranking held back during remote input no longer moves tiles when the app list reloads.
 - From GlassOS (upstream #16, merged): after Home, the focus sound and a tile's focus animation no longer repeat on
   their own, and the first top row app no longer stays enlarged for a moment. Package broadcasts that change nothing
   shown refresh the tiles in place instead of rebuilding them (and no longer cancel an app being moved), and only a

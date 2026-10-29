@@ -126,6 +126,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     private var appsToken = 0
     private var usageToken = 0
     private var usage = AppUsage.Snapshot()
+    /** The ranking the tiles show; a newer [usage] waits while [usagePending] holds it back from moving tiles. */
+    private var shownUsage = AppUsage.Snapshot()
     private var usagePending = false
     private var usageInputEpoch = 0L
     private var inputEpoch = 0L
@@ -698,7 +700,10 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         val names = prefs.folders.associate { it.id to it.name }
         // Automatic ranking is derived from the saved layout, so switching back to manual restores it.
         val base = manualPlacement()
-        val p = if (prefs.mostUsed) UsageOrder.arrange(base, usage.time, COLS) else base
+        // A held snapshot (fetched while the remote was in use) does not move tiles, even when the app list reloads.
+        val rank = if (usagePending && dockTiles.isNotEmpty()) shownUsage else usage
+        if (prefs.mostUsed) shownUsage = rank
+        val p = if (prefs.mostUsed) UsageOrder.arrange(base, rank.time, COLS) else base
         folderMembers = p.folderMembers
         val e = HashMap<String, AppEntry>()
         for (id in p.dock + p.drawer) {
@@ -771,7 +776,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         ++usageToken
         usagePending = false
         prefs.mostUsed = on
-        if (!on) usage = AppUsage.Snapshot()
+        if (!on) { usage = AppUsage.Snapshot(); shownUsage = usage }
         reloadDock()
         syncOther()
         settings.refresh()
@@ -1918,6 +1923,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         ++usageToken
         usagePending = false
         usage = AppUsage.Snapshot()
+        shownUsage = usage
         settingsChanged()
         loadApps()
         reloadDock()

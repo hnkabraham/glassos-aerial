@@ -177,7 +177,8 @@ class TileView(ctx: Context, val cardW: Int, val cardH: Int, private val labelH:
         translationZ = if (gained) 2f else 0f
         // Decided here rather than in a global focus listener: that one runs before the gaining view's
         // onFocusChanged, which would then start the spring and tilt again.
-        val instant = FocusAnim.forceInstant || quietFocus?.invoke() == true
+        // Reduce motion lands every focus change at once, as FocusAnim.set's default does.
+        val instant = FocusAnim.forceInstant || Effects.reduceMotion || quietFocus?.invoke() == true
         if (!picked) focus.set(gained, instant)
         if (instant) {
             glareAnim?.cancel()

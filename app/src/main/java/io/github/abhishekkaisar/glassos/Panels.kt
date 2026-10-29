@@ -573,11 +573,18 @@ class FolderPanel(private val home: HomeScreen) : FrameLayout(home.ctx) {
         home.card(label, items)
     }
 
-    /** The app list changed (install, uninstall, hide): redraw what is shown. */
+    /**
+     * The app list changed (install, uninstall, hide): redraw what is shown. Fire OS also sends package broadcasts that
+     * change nothing here; then the grid and its focus stay as they are, and a real change keeps focus on the same app.
+     */
     fun refresh() {
         val id = folderId ?: return
         if (home.folderName(id) == null) { close(instant = true); return }
-        if (mode == Mode.MEMBERS) show(Mode.MEMBERS)
+        if (mode != Mode.MEMBERS) return
+        if (home.folderApps(id).map { it.pkg } == tiles.map { it.wallId }) return
+        val keep = tiles.firstOrNull { it.isFocused }?.wallId
+        show(Mode.MEMBERS)
+        keep?.let { k -> tiles.firstOrNull { it.wallId == k }?.requestFocus() }
     }
 
     private fun show(m: Mode) {
