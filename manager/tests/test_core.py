@@ -835,6 +835,38 @@ class CoreTests(unittest.TestCase):
             with self.assertRaises(Error, msg=bad):
                 schedule(bad)
 
+    def test_sync_sends_captions_beside_their_video_and_refuses_changed_ones(self):
+        row = self.scene("05-dusk.mp4")
+        cap = self.root / "05-dusk.captions.json"
+        cap.write_text('{"version":1,"captions":[{"t":0,"text":"Over the hills"}]}')
+        row.update(captions_path=str(cap), captions_sha256=digest(cap))
+        self.m.add_device("Test", "tv.local")
+        id = self.m.state["devices"][0]["id"]
+        self.m.sync(id, lambda _: None)
+        self.assertEqual(cap.read_bytes(), self.d.files[REMOTE + "/05-dusk.captions.json"])
+        # The library's public snapshot never shows local paths.
+        self.assertNotIn("captions_path", self.m.snapshot()["scenes"][0])
+        # A captions file edited after it was added is not sent: the same rule as videos and posters.
+        cap.write_text('{"version":1,"captions":[]}')
+        with self.assertRaises(Error):
+            self.m.sync(id, lambda _: None)
+        # A file GlassOS would not read is left out, with a note, and the rest of the sync goes on.
+        cap.write_text("not captions")
+        row["captions_sha256"] = digest(cap)
+        self.d.files.clear()
+        notes = []
+        self.m.sync(id, notes.append)
+        self.assertNotIn(REMOTE + "/05-dusk.captions.json", self.d.files)
+        self.assertIn(REMOTE + "/05-dusk.mp4", self.d.files)
+        self.assertTrue(any("Captions not sent" in n for n in notes))
+        # The scene itself still goes, name and all.
+        self.assertIn("05-dusk.mp4", json.loads(self.d.files[REMOTE + "/scenes.json"]))
+        # A scene without captions sends none.
+        self.d.files.clear()
+        row.pop("captions_path")
+        self.m.sync(id, lambda _: None)
+        self.assertFalse(any(k.endswith(".captions.json") for k in self.d.files))
+
     def test_sync_writes_version_1_with_a_start_on_every_row(self):
         self.scene()
         self.m.add_device("Test", "tv.local")

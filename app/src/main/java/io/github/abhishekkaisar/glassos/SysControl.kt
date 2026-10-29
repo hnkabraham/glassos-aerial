@@ -28,7 +28,11 @@ class AdminReceiver : DeviceAdminReceiver()
  * Do Not Disturb. Glass reads no notifications. Enabled in setup or over ADB (see README.md).
  */
 class MediaListener : NotificationListenerService() {
-    override fun onListenerConnected() { instance = this }
+    override fun onListenerConnected() {
+        instance = this
+        // Granted while a home or the screensaver was on screen: Now Playing can follow the sessions from now on.
+        NowPlayingWatch.accessGranted()
+    }
     override fun onListenerDisconnected() { if (instance === this) instance = null }
     override fun onDestroy() { if (instance === this) instance = null; super.onDestroy() }
 
@@ -185,13 +189,16 @@ class NowPlaying(val controller: MediaController, val title: String, val subtitl
             (ctx.getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager).getActiveSessions(MediaListener.component(ctx))
         } catch (e: Throwable) { emptyList() }
 
-        fun current(ctx: Context): NowPlaying? {
+        /** The first session playing or paused with a title; with [playingOnly], the first one playing (the scenery's). */
+        fun current(ctx: Context, playingOnly: Boolean = false): NowPlaying? {
             for (c in sessions(ctx)) {
                 val st = c.playbackState?.state ?: continue
                 val md = c.metadata ?: continue
-                val title = md.getString(MediaMetadata.METADATA_KEY_TITLE) ?: md.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE) ?: continue
+                // Some apps publish an empty title while they load the next item: nothing to show yet.
+                val title = (md.getString(MediaMetadata.METADATA_KEY_TITLE) ?: md.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE))
+                    ?.takeIf { it.isNotBlank() } ?: continue
                 val playing = st == PlaybackState.STATE_PLAYING || st == PlaybackState.STATE_BUFFERING
-                if (!playing && st != PlaybackState.STATE_PAUSED) continue
+                if (!playing && (playingOnly || st != PlaybackState.STATE_PAUSED)) continue
                 val sub = md.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: md.getString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE)
                     ?: md.getString(MediaMetadata.METADATA_KEY_ALBUM) ?: ""
                 val art = md.getBitmap(MediaMetadata.METADATA_KEY_ART) ?: md.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)

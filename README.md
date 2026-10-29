@@ -38,6 +38,8 @@ GlassOS Aerial is a separate app: package `io.github.abhishekkaisar.glassos.aeri
 | Playback recovery | Skips clips that stall, retries files that were repaired and picks up changed posters and titles. | 1.4 |
 | **Screensaver** | Your scenery as the TV's screensaver when it is idle in any app, with scene names, the cinema clock and night dimming. Chosen and undone from the Mac manager. [How it works](docs/USAGE.md#screensaver) | 1.6 |
 | **Sun times** | Night mode and daily-rhythm entries can follow sunset and sunrise, estimated from the TV's time zone or worked out for a place set from the Mac. [Details](docs/USAGE.md#sun-times) | 1.6 |
+| **Place captions** | Short notes that change as a scene plays, such as "Over the coast heading north", shown in cinema mode and the screensaver. They come from a captions file beside the clip. [Details](docs/USAGE.md#place-captions) | 1.7 (unreleased) |
+| **Match frame rate** | In the screensaver, the TV switches its refresh rate to suit the scenery when the two do not already fit, such as a library of 24 or 25 fps clips on a 60 Hz TV. Off by default; 29.97 fps scenery already plays smoothly at 59.94 Hz. [Details](docs/USAGE.md#match-frame-rate) | 1.7 (unreleased) |
 
 ### Home and apps
 
@@ -51,6 +53,8 @@ GlassOS Aerial is a separate app: package `io.github.abhishekkaisar.glassos.aeri
 | Most-used app order | Ranks the top row, drawer and folders by recent time spent. Manual mode brings back your own arrangement. [How it ranks](docs/USAGE.md#most-used-app-order) | 1.2 |
 | Uninstall from Home | Hold OK on an app, choose Uninstall and confirm in the TV's own dialog, in either app-order mode and inside folders. | 1.3 |
 | Glass themes and app art | Five glass palettes, your own images for app tiles, and a cinema clock that moves to a new corner each minute. [Themes](docs/USAGE.md#themes-app-artwork-and-the-moving-clock) | 1.5 |
+| **Now Playing** | What a media app plays, as a glass capsule beside the user pill and a card in cinema mode and the screensaver, as on tvOS. Needs Notification access. [Details](docs/USAGE.md#now-playing) | 1.7 (unreleased) |
+| **Weather** | The temperature and a weather icon after the time and in the cinema clock, for your sun times place. Off by default; when on, the TV asks Open-Meteo for it with that place rounded to about 11 km. [Privacy](docs/USAGE.md#weather) | 1.7 (unreleased) |
 | **App lock** | Hold OK on an app and choose Lock app. Opening it then needs a code of four remote buttons. With Usage access and Display over other apps, it is also meant to be covered when a phone casts to it or Alexa opens it (tested only with a simulated outside launch). The code and locked list never go into backups. It is a launcher lock, not a security boundary. [Limits](docs/USAGE.md#app-lock) | 1.6 |
 
 ### Mac companion: GlassOS Manager
@@ -64,6 +68,7 @@ The manager is not a separate download: run it from a checkout of this repositor
 | Scenery catalog | Browse Aerial-compatible JSON feeds, download chosen SDR videos and compress them on the Mac. | 1.5 |
 | Device profiles | Records each TV's hardware and software, keeps its latest health reports and compares checks with a saved baseline. | 1.5 |
 | **TV controls** | Set a new app lock code, turn the lock off or allow casting protection, and make GlassOS scenery the screensaver and undo it, all over ADB. Needs GlassOS 1.6 on the TV. [TV controls](manager/README.md#tv-controls) | 1.6 |
+| **Captions sync** | A scene whose library entry names a place captions file gets it copied beside the video, with the same hash checks as videos and posters. | 1.7 (unreleased) |
 | **Sun times location** | Daily rhythm entries can start at sunrise or sunset, and the manager can send the TV a place for its sun times: typed in, or looked up from ipinfo.io only when you ask. [Daily rhythm](manager/README.md#daily-rhythm) | 1.6 |
 
 ### Screen Mirroring (unreleased)
@@ -223,6 +228,7 @@ For a normal Android TV default-home setup, select another Home app first. Glass
 
 - **Abhishek Kaisar and contributors:** [upstream GlassOS](https://github.com/AbhishekKaisar/glassos-tv), the foundation of this fork.
 - **Screen Mirroring:** [UxPlay](https://github.com/FDH2/UxPlay), [jqssun's android-airplay-server](https://github.com/jqssun/android-airplay-server), [libplist](https://github.com/libimobiledevice/libplist), OpenSSL and [Oboe](https://github.com/google/oboe), each under its own licence ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
+- **Weather data by [Open-Meteo.com](https://open-meteo.com/)**, under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), only when Settings > Weather is on.
 - **GhostLock and Launcher Manager authors:** the separate device tools linked above. They are not bundled with our APK.
 - **Feature references:** [Projectivy](https://github.com/spocky/miproja1) and [Arc](https://github.com/meddouribadis/arclauncher) informed the personalization ideas; [Aerial Views](https://github.com/theothernt/AerialViews) and [Aerial Community](https://github.com/AerialScreensaver/AerialCommunity) informed the feed workflow. These are independent implementations; their apps and media are not bundled.
 - **This fork:** local aerial playback and the controls documented here. File fork-specific issues in [our tracker](https://github.com/hnkabraham/glassos-aerial/issues).

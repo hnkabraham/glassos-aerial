@@ -185,6 +185,66 @@ change; a setting that did not exist is removed again. This also works when the 
 another screensaver (neither GlassOS scenery nor the saved one) was chosen since, it changes nothing and keeps the saved
 values. Restart the TV once if it turned Ambient Experience back on.
 
+### Now Playing
+
+While a media app plays (music, a podcast, or Screen Mirroring's audio from an iPhone or Mac), a glass capsule beside
+the user pill shows its cover, title and artist, as tvOS does. In cinema mode and the screensaver a card shows them in
+a corner clear of the clock and the scene name (bottom left, or top right while one of those is there). A pause hides
+it after 8 seconds, so the gap between two tracks does not flash it away; the next track swaps in place. It reads the
+TV's media sessions, which Android allows only with **Notification access** (Settings > Permissions); GlassOS reads no
+notifications. Settings > **Now Playing** turns it off, or, without access, leads to the permissions step. Granting
+access while the home is on screen starts it at once. Control Center's Now Playing tab, with its play, pause and skip
+buttons, is unchanged.
+
+### Weather
+
+Settings > **Weather** shows the temperature and a weather icon after the time in the user pill and in the cinema
+clock (cinema mode and the screensaver). It is off until you choose °F or °C there (the unit your country uses comes
+first). The reading comes from [Open-Meteo](https://open-meteo.com/)'s free forecast API, with no key or account, for
+the [sun times](#sun-times) place: the one set in GlassOS Manager, or the time zone's estimate, which the card says
+(an estimate can be a long way off; set your place in GlassOS Manager > Daily rhythm for local weather).
+
+What is sent: that place rounded to 0.1° (about 11 km) and the unit, with a plain "GlassOS-Aerial" user agent rather
+than Android's (which names the TV's model), at most every 30 minutes and only while a GlassOS home, or the screensaver
+with its clock, is on screen. Open-Meteo sees the TV's internet address, as any website does. A failed request waits 10 minutes before the next try, and a
+reading older than two hours is not shown. The reading stays on the TV; backups carry only Weather on or off and its
+unit. Weather needs Fire OS 6 or Android 7.1 and later: older versions cannot check Open-Meteo's certificate, and the
+setting says so. Weather data by Open-Meteo.com, under CC BY 4.0.
+
+### Place captions
+
+A scene can have captions that change as it plays, such as "Over the coast heading north", like the places Apple TV
+names during its aerials. In cinema mode and the screensaver each one fades in when the clip reaches it, centred near
+the bottom (above the Now Playing card when that is in a bottom corner), and fades out after 10 seconds or when the
+next one starts. A clip that resumes part-way shows the caption in force, if it has time left. Settings > **Place
+captions** turns them off. Clips without a captions file show none.
+
+The file sits beside the clip as `<clip name without extension>.captions.json`, at most 32 KB:
+
+```json
+{"version": 1, "captions": [{"t": 0, "text": "Over the coast heading north"}, {"t": 42.5, "text": "Crossing the bay"}]}
+```
+
+`t` is seconds from the start of the clip at normal speed. Entries out of order are sorted, and ones without a time or
+text are skipped. A file copied by hand beside a clip works too; GlassOS picks it up at the next scan. GlassOS Manager
+copies a scene's captions file with its video when the scene's library entry names one (`captions_path` and its
+`captions_sha256` in the manager's library file; the manager has no screen for this yet), with the same hash checks as
+videos and posters, and leaves out a file GlassOS would not read.
+
+### Match frame rate
+
+Settings > **Match frame rate** (Android 6 / Fire OS 6 and later; off by default): in the screensaver, when the frame
+rates of the scenes that may play (those not hidden) do not fit the TV's refresh rate, the TV is asked for one that fits
+them all, at the same resolution, once per screensaver session; the TV goes back to its own when the screensaver ends.
+It helps a library of 24, 25 or 30 fps clips on a 59.94 Hz TV (GlassOS Manager's own imports are 30 fps). Scenery at
+29.97 fps already plays smoothly at the usual 59.94 Hz, so nothing changes for it, and a library mixing rates that no
+single mode fits (29.97 and 30 fps together) is left as it is rather than judder the other scenes. Each clip's rate is
+measured once from its frame times, because containers often round 29.97 to 30; the first screensaver after a change
+takes a few seconds for that, while the scenery already plays. A switch can make the TV go dark for a second or two as
+the screensaver starts and ends, and AV receivers may need a moment too. On Fire TV, Settings > Display & Sounds >
+Display > **Match Original Frame Rate** may also need to be on. The card shows what the TV runs at now. The home never
+switches: every app launch would blank the TV.
+
 ### Night mode
 
 Settings > **Night mode**, with **Night starts** and **Night ends** (Left and Right step half an hour; a window like
@@ -267,7 +327,8 @@ adb -s <new-tv> push glassos-aerial-backup-20261024-163012.json /sdcard/Document
 
 A backup holds only: the top row, drawer order and hidden apps, folders, the Top Shelf source and built-in
 fallback background, focus sounds, cinema, night (including Night follows and its offsets) and effects settings, the Manual/Most used preference, scenery favourites, hidden scenes,
-shuffle, favourites only and scene names, and Screen Mirroring's on/off state, TV name, Require PIN, Resolution and
+shuffle, favourites only, scene names and place captions, Now Playing, Weather on/off and its unit, Match frame rate,
+and Screen Mirroring's on/off state, TV name, Require PIN, Resolution and
 Sender controls TV volume, where the TV and build have Screen Mirroring (restoring them starts or stops the receiver to
 match, and the confirmation says when it would turn it on; never its pairing identity). It never holds the TMDB key or other credentials, your name, photo or
 country, the sun times place, setup and permission state, Home replacement and routing, the sleep timer, playback positions, device
@@ -313,7 +374,7 @@ Every feature works without its permission, with less:
 |---|---|---|
 | Usage access | Most-used app order; app lock's casting protection; also detecting stock Home for the optional watcher | Most-used mode keeps manual order; the watcher cannot detect stock Home; locked apps ask for the code only when opened from GlassOS |
 | Display over other apps | Showing GlassOS at once after Home; app lock's casting protection and Screen Mirroring over another app (both Android 10 and later) | GlassOS still comes back, a moment later; on Android 10 and later, casts and Alexa can open locked apps without the code, and mirroring that starts over another app plays hidden until you choose Mirroring in Control Center |
-| Notification access | Now Playing and Do Not Disturb | Those tiles are hidden or open the TV's settings |
+| Notification access | Now Playing (Control Center, the capsule beside the user pill, and the cinema and screensaver card) and Do Not Disturb | Those tiles are hidden or open the TV's settings; nothing shows beside the pill or over the scenery |
 | Device admin | Sleep and the sleep timer | Fire TV: Sleep opens the Fire TV sleep menu. Android TV: Sleep is unavailable |
 | Storage | Your profile photo and own backgrounds, aerial videos in Movies/GlassAerial, backups in Documents/GlassOS-Aerial | The glass avatar and built-in scenes; backups go to the app's own folder |
 

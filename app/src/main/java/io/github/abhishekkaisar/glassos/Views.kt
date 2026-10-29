@@ -380,6 +380,12 @@ class UserPill(ctx: Context) : View(ctx) {
         }
     var time = ""
         set(v) { if (v != field) { field = v; requestLayout(); invalidate() } }
+    /** Settings > Weather: its icon and temperature after the time; null shows none. */
+    var weather: WeatherNow? = null
+        set(v) {
+            if (v?.degrees == field?.degrees && v?.sky == field?.sky && v?.day == field?.day) { field = v; return }
+            field = v; requestLayout(); invalidate()
+        }
 
     private val glass = GlassPainter().apply {
         tint = 0.20f; tintColor = 0xFFFFF4E8.toInt(); sheen = 0.10f; highlight = 0.40f; border = 0.14f; stroke = ctx.dp(0.6f)
@@ -403,6 +409,9 @@ class UserPill(ctx: Context) : View(ctx) {
     private val inset = ctx.dp(2.5f)
     private val padL = ctx.dp(11f)
     private val gapT = ctx.dp(7f)
+    private val gapW = ctx.dp(9f)
+    private val icon = ctx.dp(17f)
+    private val gapI = ctx.dp(4f)
 
     init {
         isFocusable = true
@@ -411,8 +420,10 @@ class UserPill(ctx: Context) : View(ctx) {
         setOnClickListener { onClick?.invoke() }
     }
 
+    private fun weatherWidth(): Float = weather?.let { gapW + icon + gapI + timeText.measureText(it.degrees) } ?: 0f
+
     override fun onMeasure(w: Int, hs: Int) {
-        val width = padL + timeText.measureText(time) + gapT + av + inset
+        val width = padL + timeText.measureText(time) + weatherWidth() + gapT + av + inset
         setMeasuredDimension(Math.ceil(width.toDouble()).toInt(), h)
     }
 
@@ -474,7 +485,13 @@ class UserPill(ctx: Context) : View(ctx) {
             shadowStep = q
             if (q > 0) timeText.setShadowLayer(dp(3f), 0f, dp(0.5f), alphaOf(Color.BLACK, 0.35f * q / 8f)) else timeText.clearShadowLayer()
         }
-        c.drawText(time, padL, cy - (timeText.ascent() + timeText.descent()) / 2, timeText)
+        val baseline = cy - (timeText.ascent() + timeText.descent()) / 2
+        c.drawText(time, padL, baseline, timeText)
+        weather?.let { wx ->
+            val x = padL + timeText.measureText(time) + gapW
+            WeatherIcon.draw(c, wx.sky, wx.day, x + icon / 2, cy, icon)
+            c.drawText(wx.degrees, x + icon + gapI, baseline, timeText)
+        }
 
         val cx = width - inset - av / 2
         val bmp = avatar

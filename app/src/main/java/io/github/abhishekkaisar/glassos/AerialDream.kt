@@ -30,6 +30,8 @@ import java.util.concurrent.Executors
  */
 class AerialDream : DreamService() {
     private var view: ScreensaverView? = null
+    /** Settings > Match frame rate asked the TV for a mode this session (once at most). */
+    private var asked = false
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -44,6 +46,12 @@ class AerialDream : DreamService() {
         MainActivity.screenSize(this)
         val v = ScreensaverView(ContextThemeWrapper(this, R.style.GlassTheme))
         view = v
+        // The frame rates of the scenes that may play, once per session: a mode that suits them all if the TV's does
+        // not (see FrameRate).
+        v.onSessionFps = { rates ->
+            @Suppress("DEPRECATION")
+            if (!asked && Prefs(this).matchFrameRate) asked = FrameRate.request(window, window.windowManager.defaultDisplay, rates)
+        }
         setContentView(v)
         // The view paints every pixel (black or a still): no window background under it.
         window.setBackgroundDrawable(null)
@@ -57,12 +65,19 @@ class AerialDream : DreamService() {
     /** Waking: the decoder goes before the home, which can resume while this is still on screen, asks for it. */
     override fun onWakeUp() {
         view?.stop()
+        letGoOfMode()
         super.onWakeUp()
     }
 
     override fun onDreamingStopped() {
         view?.stop()
+        letGoOfMode()
         super.onDreamingStopped()
+    }
+
+    private fun letGoOfMode() {
+        if (asked) FrameRate.release(window)
+        asked = false
     }
 
     override fun onDetachedFromWindow() {
@@ -143,6 +158,16 @@ class ScreensaverView(ctx: Context) : FrameLayout(ctx) {
     private val aerial = AerialVideoView(ctx)
     private val label = SceneLabel(ctx)
     private val clock = CinemaClock(ctx)
+    private val nowCard = NowPlayingCard(ctx, sampleBackdrop = false)
+    private val captionLine = CaptionLine(ctx)
+    private val captionTick = object : Runnable {
+        override fun run() {
+            if (!started) return
+            captionLine.follow(aerial.positionMs())
+            main.postDelayed(this, 1000)
+        }
+    }
+    private val nowWatch = NowPlayingWatch(ctx) { showNowPlaying(it) }
     private val dim = View(ctx).apply { visibility = View.GONE }
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
@@ -157,11 +182,17 @@ class ScreensaverView(ctx: Context) : FrameLayout(ctx) {
     private val timeReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) { tick() }
     }
+    private val weatherListener: () -> Unit = { clock.weather = WeatherState.current(context, prefs) }
+    private var captionKey = ""
+    /** The frame rates of the scenes that may play, once per session (Settings > Match frame rate), off the main thread. */
+    var onSessionFps: ((List<Float>) -> Unit)? = null
     private val sw get() = Backdrop.screenW
     private val sh get() = Backdrop.screenH
 
     init {
         setBackgroundColor(Color.BLACK)
+        // The Now Playing card's shadow reaches past its bounds.
+        clipChildren = false
         addView(still, LayoutParams(-1, -1))
         addView(aerial, LayoutParams(-1, -1))
         // As on the home: the scene's name top left (bottom left while the clock is there), the clock in a safe corner,
@@ -170,6 +201,13 @@ class ScreensaverView(ctx: Context) : FrameLayout(ctx) {
             leftMargin = sw * 60 / 1920; topMargin = sh * 44 / 1080
         })
         addView(clock, LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END))
+        // The place caption, centred near the bottom, clear of the corners.
+        addView(captionLine, LayoutParams(sw * 70 / 100, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+            bottomMargin = sh * 60 / 1080
+        })
+        // What a media app plays, in a corner clear of the clock and the name (see NowPlayingPosition).
+        addView(nowCard)
+        nowCard.place(NowPlayingPosition.corner(null))
         addView(dim, LayoutParams(-1, -1))
         aerial.onClipChanged = { clipChanged(it) }
         aerial.onUnavailable = { showFallback() }
@@ -191,11 +229,15 @@ class ScreensaverView(ctx: Context) : FrameLayout(ctx) {
                 addAction(Intent.ACTION_TIMEZONE_CHANGED)
             })
         } catch (e: Exception) { }
+        WeatherState.addListener(weatherListener)
         tick()
+        if (prefs.nowPlaying) nowWatch.start()
+        if (prefs.placeCaptions) main.post(captionTick)
         if (prefs.cinemaClock) {
             clock.visibility = View.VISIBLE
             clock.animate().cancel()
             clock.animate().alpha(1f).setDuration(Effects.fade(900)).start()
+            placeCaption()
         }
         val token = ++scan
         val ctx = context
@@ -209,6 +251,14 @@ class ScreensaverView(ctx: Context) : FrameLayout(ctx) {
                 aerial.setRunning(true)
                 if (!aerial.isActive) showFallback()
             }
+            // The frame rates of the scenes that are not hidden, on their own thread (stills and captions go first), for
+            // this session only: a wake stops the measuring.
+            if (onSessionFps != null && prefs.matchFrameRate && FrameRate.supported && list.isNotEmpty()) {
+                val hidden = prefs.sceneHidden
+                FrameRate.measureAll(list.filter { it.id !in hidden }, { token == scan && started }) { rates ->
+                    main.post { if (token == scan && started && rates.isNotEmpty()) onSessionFps?.invoke(rates) }
+                }
+            }
         }
     }
 
@@ -218,6 +268,12 @@ class ScreensaverView(ctx: Context) : FrameLayout(ctx) {
         started = false
         scan++
         aerial.setRunning(false)
+        nowWatch.stop()
+        nowCard.hide(instant = true)
+        main.removeCallbacks(captionTick)
+        captionLine.reset()
+        placeCaption()
+        WeatherState.removeListener(weatherListener)
         try { context.unregisterReceiver(timeReceiver) } catch (e: Exception) { }
         SceneSession.yield(aerial)
         WLog.i("screensaver off")
@@ -240,11 +296,16 @@ class ScreensaverView(ctx: Context) : FrameLayout(ctx) {
 
     /** The minute tick (and time or time zone changes): the clock, its corner, night mode and the daily rhythm. */
     private fun tick() {
+        // The weather, as on the home: a stale reading goes, a due one is asked for (sets the clock's text too), but
+        // only while the clock, the one place the screensaver shows it, is on.
+        clock.weather = WeatherState.current(context, prefs)
+        if (started && prefs.cinemaClock) WeatherState.refresh(context, prefs)
         clock.update()
         clock.place(prefs.movingClock)
         // The clock moved into the scene name's corner: the name goes at once, as the clock moved (see
         // CinemaPosition.labelCorner).
         if (prefs.cinemaClock && label.corner == clock.corner) label.hide(instant = true)
+        if (nowCard.shown) placeNowCard() else placeCaption()
         val a = HomeScreen.nightAlpha(prefs)
         dim.setBackgroundColor(Color.argb((a * 255).toInt(), 0, 0, 0))
         dim.visibility = if (a > 0f) View.VISIBLE else View.GONE
@@ -253,12 +314,46 @@ class ScreensaverView(ctx: Context) : FrameLayout(ctx) {
 
     private fun clipChanged(clip: AerialClip) {
         clip.poster?.let { poster -> showStill("aerial:${poster.path}:${clip.revision}") { WallpaperStore.decodeCrop(poster, sw, sh) } }
+        // Its place captions, read off the main thread; the last clip's go at once.
+        val k = Captions.keyFor(clip)
+        if (k != captionKey) {
+            captionKey = k
+            captionLine.setCaptions(clip.id, emptyList())
+            val f = clip.captions
+            if (f != null && !worker.isShutdown) worker.execute {
+                val list = Captions.read(f)
+                main.post { if (!released && aerial.current()?.id == clip.id && captionKey == k) captionLine.setCaptions(clip.id, list) }
+            }
+        }
         // Shown once per clip, as on the home: waking and sleeping again does not repeat it.
         if (clip.id != SceneSession.labeled) {
             SceneSession.labeled = clip.id
             if (prefs.sceneLabels) label.show(clip.name, null, HomeScreen.SCENE_LABEL_MS,
                 CinemaPosition.labelCorner(if (prefs.cinemaClock) clock.corner else null))
+            placeCaption()
         }
+    }
+
+    private fun showNowPlaying(np: NowPlaying?) {
+        if (!started) return
+        placeNowCard()
+        nowCard.show(np)
+        placeCaption()
+    }
+
+    private fun placeNowCard() {
+        nowCard.place(NowPlayingPosition.corner(if (prefs.cinemaClock) clock.corner else null, label.corner.takeIf { label.shown }))
+        placeCaption()
+    }
+
+    /** The place caption sits near the bottom, above whatever is in a bottom corner: the clock, the name or the card. */
+    private fun placeCaption() {
+        val bottom = ArrayList<Pair<View, Int>>()
+        (clock.layoutParams as? LayoutParams)?.let { if (prefs.cinemaClock && clock.corner >= 2) bottom.add(clock to it.bottomMargin) }
+        (label.layoutParams as? LayoutParams)?.let { if (label.shown && label.corner == 3) bottom.add(label to it.bottomMargin) }
+        val m = maxOf(Captions.clearance(sh * 60 / 1080, context.dpi(12f), bottom), nowCard.bottomClearance() + context.dpi(12f))
+        val lp = captionLine.layoutParams as LayoutParams
+        if (lp.bottomMargin != m) { lp.bottomMargin = m; captionLine.layoutParams = lp }
     }
 
     /** Nothing can play (no clips, no storage access, or none decodes): the home's fallback background. */

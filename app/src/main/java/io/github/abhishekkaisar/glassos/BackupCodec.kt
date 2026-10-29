@@ -30,13 +30,20 @@ data class DisplayBackup(
     val mostUsed: Boolean? = null,
     val theme: String? = null,
     val movingClock: Boolean? = null,
-    val customArt: Boolean? = null
+    val customArt: Boolean? = null,
+    val nowPlaying: Boolean? = null,
+    /** Weather on or off and its unit; never the reading or the place it was for. */
+    val weather: Boolean? = null,
+    val weatherUnit: String? = null,
+    val matchFrameRate: Boolean? = null
 )
 
 data class SceneryBackup(
     val shuffle: Boolean? = null,
     val favoritesOnly: Boolean? = null,
     val labels: Boolean? = null,
+    /** Place captions in cinema mode and the screensaver. */
+    val captions: Boolean? = null,
     val favorites: List<String>? = null,
     val hidden: List<String>? = null,
     val collection: String? = null
@@ -157,6 +164,10 @@ object BackupCodec {
             s.theme?.takeIf { it in Themes.ids }?.let { j.put("theme", it) }
             s.movingClock?.let { j.put("movingClock", it) }
             s.customArt?.let { j.put("customArt", it) }
+            s.nowPlaying?.let { j.put("nowPlaying", it) }
+            s.weather?.let { j.put("weather", it) }
+            s.weatherUnit?.takeIf { it in Weather.UNITS }?.let { j.put("weatherUnit", it) }
+            s.matchFrameRate?.let { j.put("matchFrameRate", it) }
             s.cinemaClock?.let { j.put("cinemaClock", it) }
             val n = JSONObject()
             s.nightEnabled?.let { n.put("enabled", it) }
@@ -179,6 +190,7 @@ object BackupCodec {
             s.shuffle?.let { j.put("shuffle", it) }
             s.favoritesOnly?.let { j.put("favoritesOnly", it) }
             s.labels?.let { j.put("labels", it) }
+            s.captions?.let { j.put("captions", it) }
             s.favorites?.let { j.put("favorites", JSONArray(it.filter { n -> SceneNames.isValidId(n) }.distinct().take(MAX_LIST))) }
             s.hidden?.let { j.put("hidden", JSONArray(it.filter { n -> SceneNames.isValidId(n) }.distinct().take(MAX_LIST))) }
             o.put("scenery", j)
@@ -296,6 +308,8 @@ object BackupCodec {
             fail("display.night.$k must be minutes from -$maxOffset to $maxOffset.")
         val theme = str(d, "theme", "display.theme")
         if (theme != null && theme !in Themes.ids) fail("Unknown glass theme.")
+        val weatherUnit = str(d, "weatherUnit", "display.weatherUnit")
+        if (weatherUnit != null && weatherUnit !in Weather.UNITS) fail("Unknown weather unit.")
         return DisplayBackup(
             sound = bool(d, "sound", "display.sound"), topShelf = shelf, scene = scene, cinemaDelaySec = delay,
             cinemaClock = bool(d, "cinemaClock", "display.cinemaClock"),
@@ -305,7 +319,10 @@ object BackupCodec {
             reduceMotion = bool(d, "reduceMotion", "display.reduceMotion"),
             mostUsed = bool(d, "mostUsed", "display.mostUsed"), theme = theme,
             movingClock = bool(d, "movingClock", "display.movingClock"),
-            customArt = bool(d, "customArt", "display.customArt"))
+            customArt = bool(d, "customArt", "display.customArt"),
+            nowPlaying = bool(d, "nowPlaying", "display.nowPlaying"),
+            weather = bool(d, "weather", "display.weather"), weatherUnit = weatherUnit,
+            matchFrameRate = bool(d, "matchFrameRate", "display.matchFrameRate"))
     }
 
     private fun scenery(o: JSONObject): SceneryBackup? {
@@ -315,7 +332,7 @@ object BackupCodec {
         if (collection != null && collection !in SceneCollections.modes) fail("Unknown scenery collection.")
         return SceneryBackup(collection = collection,
             shuffle = bool(s, "shuffle", "scenery.shuffle"), favoritesOnly = bool(s, "favoritesOnly", "scenery.favoritesOnly"),
-            labels = bool(s, "labels", "scenery.labels"),
+            labels = bool(s, "labels", "scenery.labels"), captions = bool(s, "captions", "scenery.captions"),
             favorites = list(s, "favorites", "scenery.favorites", MAX_LIST, check)?.distinct(),
             hidden = list(s, "hidden", "scenery.hidden", MAX_LIST, check)?.distinct())
     }

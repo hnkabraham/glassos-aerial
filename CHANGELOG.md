@@ -2,6 +2,38 @@
 
 ## Unreleased (fork)
 
+- **Now Playing over the scenery:** while a media app plays (music, a podcast, Screen Mirroring's audio), a glass
+  capsule beside the user pill shows its cover, title and artist, as on tvOS; in cinema mode and the screensaver a
+  card shows them in a corner clear of the clock and the scene name (bottom left, or top right while the name has
+  moved there). A pause hides it after 8 seconds; the next track swaps in place. It reads the media sessions, so it
+  needs Notification access (Settings > Permissions), like Control Center's Now Playing; it reads no notifications.
+  **Settings > Now Playing** turns it off, or leads to the permissions step without access. Backups carry it.
+- **Weather:** **Settings > Weather** (off until chosen; °F or °C, the country's unit first) shows the temperature and a
+  weather icon after the time in the user pill and in the cinema clock (cinema mode and the screensaver). It comes from
+  Open-Meteo's free forecast API (no key or account), for the sun times place: the one set in GlassOS Manager, or the
+  time zone's estimate, which the card says. Only that place, rounded to 0.1° (about 11 km), and the unit are sent, at
+  most every 30 minutes and only while a home or the screensaver is on screen; a failed request waits 10 minutes, and a
+  reading older than two hours is not shown. The reading stays on the TV (never in backups); backups carry on/off and
+  the unit. Requests run on their own thread with a plain "GlassOS-Aerial" user agent (Android's names the TV's model);
+  a changed place or unit is asked for at once; the screensaver asks only while its clock is on. Weather data by
+  Open-Meteo.com (CC BY 4.0). It needs Fire OS 6 or Android 7.1 and later (older versions do not trust Open-Meteo's
+  certificate); there the setting says so.
+- **Place captions:** a clip can carry timed captions in `<clip>.captions.json` beside it ({"version": 1, "captions":
+  [{"t": seconds, "text": ...}]}, at most 32 KB). In cinema mode and the screensaver each caption fades in, centred near
+  the bottom, when the clip reaches it and fades out after 10 seconds or at the next one; a clip resumed part-way shows
+  the one in force if it has time left. **Settings > Place captions** turns them off; backups carry it (scenery.captions).
+  GlassOS Manager's sync copies a scene's captions file with its video when its library entry names one
+  (`captions_path`, `captions_sha256`), refusing a file that changed since, as it does for videos and posters, and
+  leaving out one GlassOS would not read. The caption rises above the clock, the scene name or the Now Playing card
+  when one is in a bottom corner, and the last clip's captions go as soon as the clip changes.
+- **Match frame rate:** **Settings > Match frame rate** (Android 6 / Fire OS 6 and later, off by default) asks the TV, in
+  the screensaver only and once per session, for a refresh rate that fits every scene that may play when the current
+  one does not (24, 25 or 30 fps on 59.94 Hz), at the same resolution, through the window's preferredDisplayModeId
+  (Fire TV's documented way; the dream's window is updated explicitly, since a dream does not pass attribute changes
+  on), and lets go when the screensaver ends. A library mixing rates no single mode fits stays as it is. Each clip's
+  rate is measured once from its frame times (also when they are rounded to milliseconds), not the container's rounded
+  field. 29.97 fps scenery already fits 59.94 Hz, so nothing changes for it. The card shows the TV's current mode.
+  Backups carry it.
 - After the upstream merge: Reduce motion again lands home tiles' focus at once (the merged focus code had dropped it);
   an open folder keeps its grid and focus when a package broadcast changes none of its apps; and with Most used order,
   a usage ranking held back during remote input no longer moves tiles when the app list reloads.

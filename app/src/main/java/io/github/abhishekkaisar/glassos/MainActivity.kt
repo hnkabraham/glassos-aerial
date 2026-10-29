@@ -184,13 +184,39 @@ class MainActivity : Activity(), HomeHost {
         s.setMetadata(android.media.MediaMetadata.Builder()
             .putString(android.media.MediaMetadata.METADATA_KEY_TITLE, "Demo Track")
             .putString(android.media.MediaMetadata.METADATA_KEY_ARTIST, "Glass test session")
+            .putBitmap(android.media.MediaMetadata.METADATA_KEY_ART, demoArt())
             .build())
-        s.setPlaybackState(android.media.session.PlaybackState.Builder()
-            .setActions(android.media.session.PlaybackState.ACTION_PLAY_PAUSE or android.media.session.PlaybackState.ACTION_SKIP_TO_NEXT or
+        fun state(playing: Boolean) = s.setPlaybackState(android.media.session.PlaybackState.Builder()
+            .setActions(android.media.session.PlaybackState.ACTION_PLAY_PAUSE or android.media.session.PlaybackState.ACTION_PLAY or
+                android.media.session.PlaybackState.ACTION_PAUSE or android.media.session.PlaybackState.ACTION_SKIP_TO_NEXT or
                 android.media.session.PlaybackState.ACTION_SKIP_TO_PREVIOUS)
-            .setState(android.media.session.PlaybackState.STATE_PLAYING, 0, 1f).build())
+            .setState(if (playing) android.media.session.PlaybackState.STATE_PLAYING else android.media.session.PlaybackState.STATE_PAUSED,
+                0, 1f).build())
+        // Play and pause (`cmd media_session dispatch pause`) change its state, so Now Playing's pause can be tried
+        // without the home leaving the screen.
+        s.setCallback(object : android.media.session.MediaSession.Callback() {
+            override fun onPlay() { state(true) }
+            override fun onPause() { state(false) }
+        })
+        state(true)
         s.isActive = true
         demo = s
+    }
+
+    /** A made-up cover for the demo session: a dusk gradient with a sun. */
+    private fun demoArt(): android.graphics.Bitmap {
+        val b = android.graphics.Bitmap.createBitmap(300, 300, android.graphics.Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(b)
+        val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        p.shader = android.graphics.LinearGradient(0f, 0f, 0f, 300f, intArrayOf(0xFF2B2A6B.toInt(), 0xFFB4507A.toInt(), 0xFFF2A65A.toInt()),
+            null, android.graphics.Shader.TileMode.CLAMP)
+        c.drawRect(0f, 0f, 300f, 300f, p)
+        p.shader = null
+        p.color = 0xFFFFE2B0.toInt()
+        c.drawCircle(150f, 205f, 52f, p)
+        p.color = 0xFF1C1F45.toInt()
+        c.drawRect(0f, 215f, 300f, 300f, p)
+        return b
     }
 
     companion object {

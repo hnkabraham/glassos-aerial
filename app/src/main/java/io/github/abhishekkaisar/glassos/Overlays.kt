@@ -65,6 +65,9 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
     private val shuffleRow = RowView(context, "Shuffle scenes")
     private val favOnlyRow = RowView(context, "Favourite scenes only")
     private val labelsRow = RowView(context, "Scene names")
+    private val captionsRow = RowView(context, "Place captions")
+    private val nowPlayingRow = RowView(context, "Now Playing")
+    private val weatherRow = RowView(context, "Weather")
     private val cinemaRow = StepperRow(context, "Cinema mode") { d -> stepCinema(d) }
     private val themeRow = StepperRow(context, "Glass theme") { d ->
         val all = Themes.all
@@ -75,6 +78,7 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
     private val movingClockRow = RowView(context, "Move cinema clock")
     private val clockRow = RowView(context, "Cinema clock")
     private val screensaverRow = RowView(context, "Screensaver")
+    private val frameRateRow = RowView(context, "Match frame rate")
     private val nightRow = RowView(context, "Night mode")
     private val nightSunRow = RowView(context, "Night follows")
     // In sun mode the steppers move the offsets from sunset and sunrise; the clock times stay as the fallback.
@@ -195,8 +199,12 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
             leftMargin = -dpi(14f); rightMargin = -dpi(14f); bottomMargin = dpi(6f)
         })
         list.addView(section("Scenery and display"))
-        for (r in listOf(sceneryRow, shuffleRow, favOnlyRow, labelsRow, cinemaRow, clockRow, movingClockRow, screensaverRow, themeRow, artRow,
-                nightRow, nightSunRow, nightStartRow, nightEndRow, nightLevelRow, sunRow, transparencyRow, motionRow)) list.addView(r, rowLp())
+        for (r in listOf(sceneryRow, shuffleRow, favOnlyRow, labelsRow, captionsRow, nowPlayingRow, weatherRow, cinemaRow, clockRow, movingClockRow, screensaverRow, themeRow, artRow,
+                nightRow, nightSunRow, nightStartRow, nightEndRow, nightLevelRow, sunRow, transparencyRow, motionRow)) {
+            list.addView(r, rowLp())
+            // Display modes are an API 23 feature (not on Fire OS 5).
+            if (r === screensaverRow && FrameRate.supported) list.addView(frameRateRow, rowLp())
+        }
         if (mirroring) {
             list.addView(section("Screen Mirroring"))
             list.addView(mirrorSubtitle)
@@ -270,6 +278,13 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         shuffleRow.onClick = { act.prefs.sceneShuffle = !act.prefs.sceneShuffle; act.applySceneChoice(); updateValues() }
         favOnlyRow.onClick = { act.prefs.sceneFavoritesOnly = !act.prefs.sceneFavoritesOnly; act.applySceneChoice(); updateValues() }
         labelsRow.onClick = { act.prefs.sceneLabels = !act.prefs.sceneLabels; updateValues() }
+        // It reads the media sessions, which needs Notification access: without it the row leads to the permissions step.
+        weatherRow.onClick = { act.weatherSettings() }
+        captionsRow.onClick = { act.prefs.placeCaptions = !act.prefs.placeCaptions; changed() }
+        nowPlayingRow.onClick = {
+            if (!Grants.listenerEnabled(context)) step(nowPlayingRow, SetupView.Step.PERMISSIONS)
+            else { act.prefs.nowPlaying = !act.prefs.nowPlaying; changed() }
+        }
         artRow.onClick = { act.prefs.customArt = !act.prefs.customArt; act.loadApps(); changed() }
         movingClockRow.onClick = { act.prefs.movingClock = !act.prefs.movingClock; changed() }
         clockRow.onClick = { act.prefs.cinemaClock = !act.prefs.cinemaClock; changed() }
@@ -277,6 +292,7 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         nightSunRow.onClick = { act.prefs.nightSun = !act.prefs.nightSun; changed() }
         sunRow.onClick = { act.sunTimesInfo() }
         screensaverRow.onClick = { act.screensaverInfo() }
+        frameRateRow.onClick = { act.frameRateSettings() }
         // Sun mode's values are longer ("Sunset +30 · 6:42 PM"): one line, cut short rather than squeezing the title.
         for (r in listOf(nightStartRow, nightEndRow, sunRow)) {
             r.valueView.maxLines = 1
@@ -358,6 +374,10 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         shuffleRow.valueView.text = onOff(p.sceneShuffle)
         favOnlyRow.valueView.text = onOff(p.sceneFavoritesOnly)
         labelsRow.valueView.text = onOff(p.sceneLabels)
+        nowPlayingRow.valueView.text = if (!Grants.listenerEnabled(context)) "Needs access" else onOff(p.nowPlaying)
+        captionsRow.valueView.text = onOff(p.placeCaptions)
+        weatherRow.valueView.text = if (!Weather.supported) "Unavailable" else if (!p.weather) "Off" else
+            if (Weather.fahrenheit(p.weatherUnit, p.country.ifEmpty { java.util.Locale.getDefault().country })) "\u00B0F" else "\u00B0C"
         cinemaRow.value = p.cinemaDelaySec.let { s -> when { s == 0 -> "Off"; s < 60 -> "After $s s"; else -> "After ${s / 60} min" } }
         themeRow.valueView.text = Themes.get(act.prefs.theme).label
         artRow.valueView.text = onOff(act.prefs.customArt)
@@ -389,6 +409,7 @@ class SettingsView(private val act: HomeScreen) : FrameLayout(act.ctx) {
         clockRow.alpha = if (p.cinemaDelaySec > 0) 1f else 0.55f
         // Read each time Settings opens: GlassOS Manager changes it from the Mac.
         screensaverRow.valueView.text = if (AerialDream.chosen(context)) "GlassOS scenery" else "${Platform.name(context)}\u2019s own"
+        frameRateRow.valueView.text = onOff(p.matchFrameRate)
         transparencyRow.valueView.text = onOff(p.reduceTransparency)
         motionRow.valueView.text = onOff(p.reduceMotion)
         backupRow.valueView.text = if (p.lastBackup.isEmpty()) "Documents/${Backup.FOLDER}" else p.lastBackup.substringAfterLast('/')

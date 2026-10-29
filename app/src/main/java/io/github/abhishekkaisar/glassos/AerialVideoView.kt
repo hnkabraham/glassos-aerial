@@ -13,9 +13,13 @@ import android.view.TextureView
 import android.view.View
 import java.io.File
 
-/** Locally cached video, an optional matching still for the glass and loading fallback, and its on-screen name. */
+/**
+ * Locally cached video, an optional matching still for the glass and loading fallback, its on-screen name, and its
+ * optional place captions (see [Captions]; not part of [revision]: new captions never restart the clip).
+ */
 data class AerialClip(val video: File, val poster: File?, val name: SceneName = SceneNames.humanize(video.name),
-    val revision: String = "${video.length()}:${video.lastModified()}:${poster?.length()}:${poster?.lastModified()}") {
+    val revision: String = "${video.length()}:${video.lastModified()}:${poster?.length()}:${poster?.lastModified()}",
+    val captions: File? = null) {
     /** The clip's file name: what favourites, hidden scenes and the play order refer to. */
     val id: String get() = video.name
 }
@@ -42,7 +46,7 @@ object AerialStore {
             it.isFile && it.length() > 0 && it.extension.lowercase() in SceneNames.VIDEO_EXTS && SceneNames.isValidId(it.name)
         }.sortedBy { it.name }.map { f ->
             val poster = listOf("jpg", "jpeg", "png").map { File(f.parentFile, f.nameWithoutExtension + "." + it) }.firstOrNull { it.isFile }
-            AerialClip(f, poster, SceneMetadata.nameFor(f.name, meta))
+            AerialClip(f, poster, SceneMetadata.nameFor(f.name, meta), captions = Captions.fileFor(f).takeIf { it.isFile })
         }
     }
 }
@@ -146,6 +150,7 @@ class AerialVideoView(ctx: Context) : TextureView(ctx), TextureView.SurfaceTextu
     private var player: MediaPlayer? = null
     private var prepared = false
     private var surface: Surface? = null
+
     private var videoW = 0
     private var videoH = 0
     private val main = Handler(Looper.getMainLooper())
@@ -180,6 +185,13 @@ class AerialVideoView(ctx: Context) : TextureView(ctx), TextureView.SurfaceTextu
     fun current(): AerialClip? = if (enabled) playlist.current?.let { clips[it] } else null
 
     val isActive: Boolean get() = enabled
+
+    /** Where the playing clip is, in ms; null while nothing plays (preparing, paused for another app, released). */
+    fun positionMs(): Long? {
+        val p = player ?: return null
+        if (!prepared) return null
+        return try { if (p.isPlaying) p.currentPosition.toLong() else null } catch (e: IllegalStateException) { null }
+    }
 
     fun setPlaylist(list: List<AerialClip>, on: Boolean, choice: SceneChoice) {
         SceneSession.load(context)

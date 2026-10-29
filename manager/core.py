@@ -45,6 +45,20 @@ SCREENSAVER = [
 ]
 COMPONENT = r"[A-Za-z0-9._]+/[A-Za-z0-9._$]+"
 REMOTE = "/sdcard/Movies/GlassAerial"
+# A scene's timed captions on the TV: "<video name without extension>.captions.json" (see Captions.kt).
+CAPTIONS_SUFFIX = ".captions.json"
+CAPTIONS_MAX = 32 * 1024
+
+
+def captions_ok(p):
+    """True when GlassOS would read the captions file at [p]: at most 32 KB of {"captions": [...]} JSON."""
+    try:
+        if not 0 < p.stat().st_size <= CAPTIONS_MAX:
+            return False
+        doc = json.loads(p.read_text(encoding="utf-8"))
+        return isinstance(doc, dict) and isinstance(doc.get("captions"), list)
+    except (OSError, ValueError):
+        return False
 DOCUMENTS = "/sdcard/Documents/GlassOS-Aerial"
 CERT = "235c4b2e2dc61d035bbcde530ab3ac94c8a2f653ffa9607ea9e87d379d8d0441"
 COLLECTIONS = {
@@ -495,6 +509,7 @@ class Manager:
             for scene in public["scenes"]:
                 scene.pop("path", None)
                 scene.pop("poster_path", None)
+                scene.pop("captions_path", None)
             for row in public["devices"]:
                 row["sun_today"] = self._sun_today(row)
             public.update(
@@ -949,6 +964,22 @@ class Manager:
                         s["poster_sha256"],
                     )
                 )
+            # Optional timed captions (places along the way), kept beside the video as <name>.captions.json. A file
+            # GlassOS would not read (over 32 KB, or not its JSON) is left out rather than sent.
+            if s.get("captions_path"):
+                p = Path(s["captions_path"])
+                if digest(p) != s.get("captions_sha256"):
+                    raise Error("Local captions changed: " + s["title"])
+                if not captions_ok(p):
+                    log("Captions not sent (not GlassOS captions, or over 32 KB): " + s["title"])
+                else:
+                    files.append(
+                        (
+                            p,
+                            REMOTE + "/" + Path(s["name"]).stem + CAPTIONS_SUFFIX,
+                            s["captions_sha256"],
+                        )
+                    )
             meta[s["name"]] = {"title": s["title"], "collections": [s["collection"]]}
         if len(json.dumps(meta, ensure_ascii=False).encode("utf-8")) > 64 * 1024:
             raise Error(

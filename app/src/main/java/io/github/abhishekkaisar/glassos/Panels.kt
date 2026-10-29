@@ -181,8 +181,23 @@ class CinemaClock(ctx: Context) : TextView(ctx) {
         visibility = View.GONE
     }
 
-    /** Shows the time now. */
-    fun update() { text = time(context) }
+    /** Settings > Weather: its icon and temperature after the time, smaller; null shows the time alone. */
+    var weather: WeatherNow? = null
+        set(v) { field = v; update() }
+
+    /** Shows the time now (and the weather, if any). */
+    fun update() {
+        val t = time(context)
+        val w = weather ?: run { text = t; return }
+        val s = android.text.SpannableStringBuilder(t).append("   ")
+        val px = (textSize * 0.5f).toInt().coerceAtLeast(1)
+        val at = s.length
+        s.append("\u2600").setSpan(android.text.style.ImageSpan(context, WeatherIcon.bitmap(w.sky, w.day, px),
+            android.text.style.DynamicDrawableSpan.ALIGN_BASELINE), at, at + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        val deg = s.length
+        s.append(" " + w.degrees).setSpan(android.text.style.RelativeSizeSpan(0.55f), deg, s.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        text = s
+    }
 
     /** The corner it was last placed in (see [CinemaPosition]); it starts bottom right. */
     var corner = 2
@@ -506,6 +521,9 @@ class FolderPanel(private val home: HomeScreen) : FrameLayout(home.ctx) {
     private val body = FrameLayout(context).apply { clipChildren = true; clipToPadding = false }
     private val nav = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; clipChildren = false; clipToPadding = false }
     private val tiles = ArrayList<ThumbView>()
+    /** The size the grid's thumbnails were made at (see [grid]), for new art in place. */
+    private var thumbW = 1
+    private var thumbH = 1
     private val picked = ArrayList<String>()
     private var nameText = ""
     /** Rename right after creating: Cancel keeps the suggested name, and an empty folder goes on to Add apps. */
@@ -581,7 +599,15 @@ class FolderPanel(private val home: HomeScreen) : FrameLayout(home.ctx) {
         val id = folderId ?: return
         if (home.folderName(id) == null) { close(instant = true); return }
         if (mode != Mode.MEMBERS) return
-        if (home.folderApps(id).map { it.pkg } == tiles.map { it.wallId }) return
+        val apps = home.folderApps(id)
+        if (apps.map { it.pkg } == tiles.map { it.wallId }) {
+            // The same apps: new art and names in place (an update), with the grid and focus as they are.
+            tiles.forEachIndexed { i, t ->
+                t.bitmap = AppArt.thumb(apps[i], thumbW, thumbH)
+                t.label = apps[i].label
+            }
+            return
+        }
         val keep = tiles.firstOrNull { it.isFocused }?.wallId
         show(Mode.MEMBERS)
         keep?.let { k -> tiles.firstOrNull { it.wallId == k }?.requestFocus() }
@@ -724,6 +750,8 @@ class FolderPanel(private val home: HomeScreen) : FrameLayout(home.ctx) {
         val cols = 5
         val tw = (panelW - dpi(68f) - dpi(28f) - (cols - 1) * dpi(18f)) / cols
         val th = tw * 9 / 16
+        thumbW = tw
+        thumbH = th
         var row: LinearLayout? = null
         apps.forEachIndexed { i, (a, note) ->
             if (i % cols == 0) {

@@ -82,6 +82,19 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         private set
     private lateinit var sceneLabel: SceneLabel
     private lateinit var cinemaClock: CinemaClock
+    private lateinit var nowPill: NowPlayingPill
+    private lateinit var nowCard: NowPlayingCard
+    private var nowWatch: NowPlayingWatch? = null
+    private var nowPlaying: NowPlaying? = null
+    private lateinit var captionLine: CaptionLine
+    /** About once a second in cinema mode: the place caption follows the playing clip. */
+    private val captionTick = object : Runnable {
+        override fun run() {
+            if (!cinema || released) return
+            captionLine.follow(aerial.positionMs())
+            main.postDelayed(this, 1000)
+        }
+    }
     private lateinit var nightDim: View
 
     private var apps: List<AppEntry> = emptyList()
@@ -145,11 +158,17 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     private val backdropListener: () -> Unit = {
         if (::root.isInitialized) invalidateDeep(root)
     }
+    /** A new weather reading (from this home's request or another's). */
+    private val weatherListener: () -> Unit = { applyWeather() }
     /** Called once per hero frame: only the glass surfaces that sample the backdrop redraw. */
     private val frameListener: () -> Unit = {
         if (::root.isInitialized) {
             gear.invalidate()
             chevron.invalidate()
+            if (::nowPill.isInitialized) {
+                if (nowPill.visibility == View.VISIBLE) nowPill.invalidate()
+                if (nowCard.visibility == View.VISIBLE) nowCard.invalidate()
+            }
             // Solid panels (reduce transparency) do not show the art behind them: nothing to redraw.
             if (!Effects.reduceTransparency) {
                 shelf.invalidate()
@@ -168,6 +187,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     init {
         Backdrop.addListener(backdropListener)
         Backdrop.addFrameListener(frameListener)
+        WeatherState.addListener(weatherListener)
         Effects.load(prefs)
         AppLock.load(prefs)
         buildUi()
@@ -187,8 +207,11 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         released = true
         Backdrop.removeListener(backdropListener)
         Backdrop.removeFrameListener(frameListener)
+        WeatherState.removeListener(weatherListener)
         hero.release()
         aerial.release()
+        nowWatch?.stop()
+        nowWatch = null
         // Screen Mirroring's status listeners, if a panel was open.
         if (::settings.isInitialized) settings.release()
         if (::cc.isInitialized) cc.release()
@@ -249,6 +272,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
                     SceneSession.labeled = clip.id
                     showSceneName(clip)
                 }
+                loadCaptions(clip)
                 if (browser.isOpen) browser.refresh()
             }
             onUnavailable = { if (browser.isOpen) browser.refresh() }
@@ -279,6 +303,17 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             rightMargin = sw * 60 / 1920; topMargin = sh * 48 / 1080
         })
         hero.nextFocusUpId = gear.id
+        // What a media app plays, beside the pill as on tvOS; it follows the pill's width as the time changes.
+        nowPill = NowPlayingPill(ctx)
+        val pillRight = sw * 60 / 1920
+        header.addView(nowPill, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply {
+            rightMargin = pillRight; topMargin = sh * 48 / 1080
+        })
+        gear.addOnLayoutChangeListener { _, l, _, r, _, _, _, _, _ ->
+            val lp = nowPill.layoutParams as FrameLayout.LayoutParams
+            val m = pillRight + (r - l) + ctx.dpi(10f)
+            if (lp.rightMargin != m) { lp.rightMargin = m; nowPill.layoutParams = lp }
+        }
         updateTime()
         if (HomeShare.avatar == null) loadAvatar()
 
@@ -349,6 +384,15 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         root.addView(cinemaClock, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply {
             rightMargin = sw * 64 / 1920; bottomMargin = sh * 48 / 1080
         })
+        // Place captions in cinema mode: one line, centred near the bottom, clear of everything in the corners.
+        captionLine = CaptionLine(ctx)
+        root.addView(captionLine, FrameLayout.LayoutParams(sw * 70 / 100, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
+            bottomMargin = sh * 60 / 1080
+        })
+        // Now Playing over the scenery in cinema mode, in a corner clear of the clock and the scene name.
+        nowCard = NowPlayingCard(ctx, sampleBackdrop = true)
+        root.addView(nowCard)
+        nowCard.place(NowPlayingPosition.corner(null))
         // Night mode: one dark layer over the scenery and the app grid, under every panel (menus stay full brightness).
         nightDim = View(ctx).apply { visibility = View.GONE; isFocusable = false; isClickable = false }
         root.addView(nightDim, FrameLayout.LayoutParams(-1, -1))
@@ -593,6 +637,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     fun onPaused() {
         exitCinema(instant = true)
         resumed = false
+        syncNowPlaying()
         if (::aerial.isInitialized) aerial.setRunning(false)
         if (::appMenu.isInitialized) leaveMove()
     }
@@ -609,15 +654,130 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         if (usagePending) { usageInputEpoch = inputEpoch; applyPendingUsage() }
         refreshUsageOrder()
         if (prefs.topShelf == HeroRepo.SRC_AERIAL) rescanScenes { if (browser.isOpen) browser.refresh() }
+        syncNowPlaying()
+        applyWeather()
+        WeatherState.refresh(ctx, prefs)
+    }
+
+    /** Settings > Weather's reading in the time pill and the cinema clock (or none). */
+    private fun applyWeather() {
+        // The first time tick comes while the home is being built, before the cinema clock exists.
+        if (!::cinemaClock.isInitialized || released) return
+        val w = WeatherState.current(ctx, prefs)
+        gear.weather = w
+        if (cinemaClock.weather?.degrees != w?.degrees || cinemaClock.weather?.sky != w?.sky || cinemaClock.weather?.day != w?.day) cinemaClock.weather = w
+    }
+
+    /** Settings > Weather: on in a unit, or off. Says what is sent, and where the place comes from. */
+    fun weatherSettings() {
+        if (!Weather.supported) {
+            card("Weather", listOf("OK" to {}), "Weather needs Fire OS 6 or Android 7.1 or later: this TV cannot check the " +
+                "weather service\u2019s security certificate.")
+            return
+        }
+        val place = SunNow.place(prefs)
+        fun set(on: Boolean, unit: String) {
+            prefs.weather = on
+            prefs.weatherUnit = unit
+            WeatherState.reset()
+            applyWeather()
+            if (on) WeatherState.refresh(ctx, prefs)
+            settings.refreshValues()
+        }
+        val where = when (place?.source) {
+            "manager" -> "for ${place.label.ifEmpty { "the place" }} set in GlassOS Manager"
+            "timezone" -> "for ${place.label}, estimated from this TV\u2019s time zone. For your own weather, set your place in " +
+                "GlassOS Manager > Daily rhythm on your Mac"
+            else -> null
+        }
+        if (where == null) {
+            card("Weather", listOf("OK" to {}), "Weather needs a place, and this TV\u2019s time zone (${java.util.TimeZone.getDefault().id}) " +
+                "has none. Set your place in GlassOS Manager > Daily rhythm on your Mac.")
+            return
+        }
+        val country = prefs.country.ifEmpty { java.util.Locale.getDefault().country }
+        val units = listOf("\u00B0F" to "f", "\u00B0C" to "c").let { if (Weather.fahrenheit(Weather.UNITS_AUTO, country)) it else it.reversed() }
+        card("Weather", units.map { (label, u) -> label to { set(true, u) } } + ("Off" to { set(false, prefs.weatherUnit) }),
+            "The temperature in the time pill, cinema mode and the screensaver, $where.\n\n" +
+            "GlassOS asks Open-Meteo (open-meteo.com) for it at most every 30 minutes while the home or the screensaver is on " +
+            "screen, sending only that place rounded to about 11 km. Weather data by Open-Meteo.com.")
+    }
+
+    /** Follows the media sessions while this home is in front and Now Playing is on; otherwise shows nothing. */
+    private fun syncNowPlaying() {
+        if (!::nowPill.isInitialized) return
+        val want = resumed && !released && prefs.nowPlaying
+        // Started without Notification access, it follows nothing: once access is there (granted in Settings), again.
+        if (want && nowWatch?.following == false && Grants.listenerEnabled(ctx)) { nowWatch?.stop(); nowWatch = null }
+        // After the home's first frame: following the sessions takes several calls to the system.
+        if (want && nowWatch == null) nowWatch = NowPlayingWatch(ctx) { showNowPlaying(it) }.also { it.seed(nowPlaying); it.start(delayMs = 250) }
+        else if (!want) {
+            nowWatch?.stop()
+            nowWatch = null
+            nowPlaying = null
+            nowPill.hideNow()
+            nowCard.hide(instant = true)
+        }
+    }
+
+    private fun showNowPlaying(np: NowPlaying?) {
+        nowPlaying = np
+        // Not while an app is moved: the move hint sits at the top too.
+        if (movingPkg == null) nowPill.show(np)
+        if (cinema) { placeNowCard(); nowCard.show(np) }
+        placeCaption()
+    }
+
+    private var captionKey = ""
+
+    /**
+     * Reads [clip]'s place captions off the main thread, when the clip or its captions file changed. The last clip's go
+     * at once, so they never show over the new one while the read waits.
+     */
+    private fun loadCaptions(clip: AerialClip) {
+        val k = Captions.keyFor(clip)
+        if (k == captionKey) return
+        captionKey = k
+        captionLine.setCaptions(clip.id, emptyList())
+        val f = clip.captions ?: return
+        if (worker.isShutdown) return
+        worker.execute {
+            val list = Captions.read(f)
+            ui { if (aerial.current()?.id == clip.id && captionKey == k) captionLine.setCaptions(clip.id, list) }
+        }
+    }
+
+    private fun placeNowCard() {
+        nowCard.place(NowPlayingPosition.corner(if (prefs.cinemaClock) cinemaClock.corner else null,
+            sceneLabel.corner.takeIf { sceneLabel.shown }))
+        placeCaption()
+    }
+
+    /** The place caption sits near the bottom, above whatever is in a bottom corner: the clock, the name or the card. */
+    private fun placeCaption() {
+        if (!::captionLine.isInitialized) return
+        val bottom = ArrayList<Pair<View, Int>>()
+        (cinemaClock.layoutParams as? FrameLayout.LayoutParams)?.let {
+            if (cinema && cinemaClock.visibility == View.VISIBLE && cinemaClock.corner >= 2) bottom.add(cinemaClock to it.bottomMargin)
+        }
+        (sceneLabel.layoutParams as? FrameLayout.LayoutParams)?.let { if (sceneLabel.shown && sceneLabel.corner == 3) bottom.add(sceneLabel to it.bottomMargin) }
+        val m = maxOf(Captions.clearance(sh * 60 / 1080, ctx.dpi(12f), bottom), nowCard.bottomClearance() + ctx.dpi(12f))
+        val lp = captionLine.layoutParams as FrameLayout.LayoutParams
+        if (lp.bottomMargin != m) { lp.bottomMargin = m; captionLine.layoutParams = lp }
     }
 
     fun updateTime() {
         if (!::gear.isInitialized) return
         gear.time = CinemaClock.time(ctx)
-        if (::cinemaClock.isInitialized) cinemaClock.text = gear.time
+        if (::cinemaClock.isInitialized) cinemaClock.update()
         if (cinema) positionCinemaClock()
         // The minute tick, time and time zone changes all land here: night mode follows them without a timer.
         applyNight()
+        // Now Playing starts following once Notification access is granted (it may have started without).
+        if (resumed) syncNowPlaying()
+        // So does the weather: a stale reading goes, and a due one is asked for while this home is in front.
+        applyWeather()
+        if (resumed && !released) WeatherState.refresh(ctx, prefs)
         // So does an open Settings panel's sun values, but only when they change: a new zone, date or clock format.
         val day = SunNow.dayKey() + if (android.text.format.DateFormat.is24HourFormat(ctx)) " 24h" else ""
         if (day != sunDay) {
@@ -1051,6 +1211,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         if (prefs.mostUsed) { openTileMenu(pkg); return }
         movingPkg = pkg
         moveFrom = Pair(dockPkgs.toList(), drawerPkgs.toList())
+        nowPill.hideNow()
         t.picked = true
         t.setJiggle(true, gentle = true)
         movePill.alpha = 0f
@@ -1064,6 +1225,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     private fun endMove() {
         tileOf(movingPkg)?.let { it.setJiggle(false); it.picked = false }
         movingPkg = null
+        nowPlaying?.let { nowPill.show(it) }
         moveFrom = null
         movePill.animate().cancel()
         movePill.translationY = if (currentRow == 0) 0f else -(sh * 40 / 1080).toFloat()
@@ -1522,6 +1684,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             ui {
                 aerialClips = list
                 if (prefs.topShelf == HeroRepo.SRC_AERIAL) aerial.setPlaylist(list, true, sceneChoice())
+                // A captions file added or changed for the clip that is playing (a GlassOS Manager sync).
+                aerial.current()?.let { loadCaptions(it) }
                 done(list)
             }
         }
@@ -1560,6 +1724,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         if (currentRow != 0 || !resumed || setup.isOpen) return
         if (hero.isFocused) sceneLabel.show(clip.name, SCENE_HINT, 0, labelCorner())
         else if (prefs.sceneLabels) sceneLabel.show(clip.name, null, SCENE_LABEL_MS, labelCorner())
+        placeCaption()
     }
 
     /** The scene name's corner: clear of the cinema clock while it shows (see [CinemaPosition.labelCorner]). */
@@ -1778,6 +1943,9 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             cinemaClock.animate().cancel()
             cinemaClock.animate().alpha(1f).setDuration(Effects.fade(900)).start()
         }
+        nowPlaying?.let { placeNowCard(); nowCard.show(it) }
+        placeCaption()
+        if (prefs.placeCaptions) { main.removeCallbacks(captionTick); main.post(captionTick) }
         WLog.i("cinema on")
     }
 
@@ -1787,6 +1955,10 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         lastInput = SystemClock.uptimeMillis()
         home.animate().cancel()
         cinemaClock.animate().cancel()
+        nowCard.hide(instant)
+        main.removeCallbacks(captionTick)
+        captionLine.reset()
+        placeCaption()
         if (instant) {
             home.alpha = 1f
             cinemaClock.alpha = 0f; cinemaClock.visibility = View.GONE
@@ -1882,6 +2054,19 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
 
     // ---------- Screensaver ----------
 
+    /** Settings > Match frame rate: what it does, what this TV runs at now, and on or off. */
+    fun frameRateSettings() {
+        @Suppress("DEPRECATION")
+        val now = FrameRate.describe((ctx.getSystemService(Context.WINDOW_SERVICE) as android.view.WindowManager).defaultDisplay)
+        card("Match frame rate", listOf("On" to { prefs.matchFrameRate = true; settings.refreshValues() },
+                "Off" to { prefs.matchFrameRate = false; settings.refreshValues() }),
+            "In the screensaver, the TV changes its refresh rate to suit the scenery when they do not already fit, such as " +
+            "24 or 25 fps clips on a 60 Hz TV. The TV may go dark for a second or two as the screensaver starts and ends. " +
+            "29.97 fps scenery already plays smoothly at the usual 59.94 Hz, so nothing changes for it." +
+            (now?.let { "\n\nThis TV now: $it." } ?: "") +
+            "\n\nFire TV may also need Settings > Display & Sounds > Display > Match Original Frame Rate.")
+    }
+
     /**
      * Settings > Screensaver: whether the TV shows this scenery when idle, and a preview. GlassOS cannot choose its own
      * screensaver (that needs a protected setting); GlassOS Manager does it over ADB.
@@ -1905,11 +2090,15 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         // The clock (already showing) moved into the scene name's corner: the name makes way at once.
         if (cinema && prefs.cinemaClock && cinemaClock.visibility == View.VISIBLE && sceneLabel.corner == cinemaClock.corner)
             moveSceneName(labelCorner(), instant = true)
+        // Then the card keeps clear of both, and the caption of all three.
+        if (::nowCard.isInitialized && nowCard.shown) placeNowCard() else placeCaption()
     }
 
     /** Display settings changed (effects, night, cinema): apply them now. */
     fun settingsChanged() {
         Effects.load(prefs)
+        syncNowPlaying()
+        if (!prefs.placeCaptions && ::captionLine.isInitialized) { main.removeCallbacks(captionTick); captionLine.reset() }
         nightLevelShown = -1f
         applyNight()
         if (prefs.cinemaDelaySec == 0) exitCinema(instant = true)
@@ -1920,6 +2109,10 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
 
     /** Everything a restored backup may have changed. */
     private fun reloadAll() {
+        // Weather on or off and its unit may have changed: the pill and clock follow now, not at the next minute.
+        WeatherState.reset()
+        applyWeather()
+        if (resumed) WeatherState.refresh(ctx, prefs)
         ++usageToken
         usagePending = false
         usage = AppUsage.Snapshot()
@@ -2022,6 +2215,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
     /** Puts focus, drawer scroll and the shown slide where [s] and [from] had them, with no animation. */
     fun restore(s: HomeState, from: HomeScreen?) {
         if (from != null && from.hero.slides.isNotEmpty()) hero.adopt(from.hero)
+        // What the other home showed playing shows here at once: no fade out and in as this one takes over.
+        from?.nowPlaying?.let { if (prefs.nowPlaying) { nowPlaying = it; nowPill.show(it, instant = true); nowWatch?.seed(it) } }
         if (setup.isOpen) return
         leaveMove()
         if (editMode) exitEdit()

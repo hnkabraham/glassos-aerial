@@ -89,6 +89,11 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("sceneLabels", true)
         set(v) { sp.edit().putBoolean("sceneLabels", v).apply() }
 
+    /** Place captions over the scenery in cinema mode and the screensaver, for clips that have them (see [Captions]). */
+    var placeCaptions: Boolean
+        get() = sp.getBoolean("placeCaptions", true)
+        set(v) { sp.edit().putBoolean("placeCaptions", v).apply() }
+
     /** Clip file names. JSON arrays, not commas: file names may contain commas. */
     var sceneFavorites: Set<String>
         get() = names("sceneFav")
@@ -117,6 +122,26 @@ class Prefs(ctx: Context) {
     var movingClock: Boolean
         get() = sp.getBoolean("movingClock", true)
         set(v) { sp.edit().putBoolean("movingClock", v).apply() }
+
+    /** What a media app plays, beside the user pill and over the screensaver (needs Notification access). */
+    var nowPlaying: Boolean
+        get() = sp.getBoolean("nowPlaying", true)
+        set(v) { sp.edit().putBoolean("nowPlaying", v).apply() }
+
+    /** The weather in the time pill, cinema mode and the screensaver (asks Open-Meteo; off until chosen). */
+    var weather: Boolean
+        get() = sp.getBoolean("weather", false)
+        set(v) { sp.edit().putBoolean("weather", v).apply() }
+
+    /** The screensaver changes the TV's refresh rate to suit the scenery when they do not fit (see [FrameRate]). */
+    var matchFrameRate: Boolean
+        get() = sp.getBoolean("matchFrameRate", false)
+        set(v) { sp.edit().putBoolean("matchFrameRate", v).apply() }
+
+    /** [Weather.UNITS]: "auto" (the country's), "f" or "c". */
+    var weatherUnit: String
+        get() = sp.getString("weatherUnit", Weather.UNITS_AUTO)?.takeIf { it in Weather.UNITS } ?: Weather.UNITS_AUTO
+        set(v) { sp.edit().putString("weatherUnit", v).apply() }
 
     var theme: String
         get() = Themes.get(sp.getString("theme", "glass") ?: "glass").id
@@ -249,8 +274,9 @@ class Prefs(ctx: Context) {
             cinemaDelaySec = cinemaDelaySec, cinemaClock = cinemaClock, nightEnabled = nightEnabled, nightStart = nightStart,
             nightEnd = nightEnd, nightLevel = nightLevel, nightSun = nightSun, nightStartOffset = nightStartOffset,
             nightEndOffset = nightEndOffset, reduceTransparency = reduceTransparency, reduceMotion = reduceMotion,
-            mostUsed = mostUsed, theme = theme, movingClock = movingClock, customArt = customArt),
-        scenery = SceneryBackup(shuffle = sceneShuffle, favoritesOnly = sceneFavoritesOnly, labels = sceneLabels,
+            mostUsed = mostUsed, theme = theme, movingClock = movingClock, customArt = customArt, nowPlaying = nowPlaying,
+            weather = weather, weatherUnit = weatherUnit, matchFrameRate = matchFrameRate),
+        scenery = SceneryBackup(shuffle = sceneShuffle, favoritesOnly = sceneFavoritesOnly, labels = sceneLabels, captions = placeCaptions,
             favorites = sceneFavorites.sorted(), hidden = sceneHidden.sorted(), collection = sceneCollection),
         mirroring = if (!includeMirroring) null else airplayConfig.let { c ->
             MirroringBackup(on = airplayOn, name = c.name, pin = c.pin, resolution = c.res, syncVolume = c.syncVolume)
@@ -274,6 +300,10 @@ class Prefs(ctx: Context) {
             s.theme?.let { e.putString("theme", it) }
             s.movingClock?.let { e.putBoolean("movingClock", it) }
             s.customArt?.let { e.putBoolean("customArt", it) }
+            s.nowPlaying?.let { e.putBoolean("nowPlaying", it) }
+            s.weather?.let { e.putBoolean("weather", it) }
+            s.weatherUnit?.let { e.putString("weatherUnit", it) }
+            s.matchFrameRate?.let { e.putBoolean("matchFrameRate", it) }
             s.cinemaClock?.let { e.putBoolean("cinemaClock", it) }
             s.nightEnabled?.let { e.putBoolean("night", it) }
             s.nightStart?.let { e.putInt("nightStart", it) }
@@ -291,6 +321,7 @@ class Prefs(ctx: Context) {
             s.shuffle?.let { e.putBoolean("sceneShuffle", it) }
             s.favoritesOnly?.let { e.putBoolean("sceneFavOnly", it) }
             s.labels?.let { e.putBoolean("sceneLabels", it) }
+            s.captions?.let { e.putBoolean("placeCaptions", it) }
             s.favorites?.let { e.putString("sceneFav", org.json.JSONArray(it).toString()) }
             s.hidden?.let { e.putString("sceneHidden", org.json.JSONArray(it).toString()) }
         }
