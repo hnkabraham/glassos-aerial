@@ -8,13 +8,14 @@ Los Angeles time-zone estimate.
 
 ## Automated checks
 
-**156 app JVM tests and 98 Python tests passed**, with no failures or errors; lint reported **0 errors**. New JVM tests
-cover where the Now Playing card goes beside the clock and the scene name, weather codes, units, rounding the place
-in any locale, parsing and checking Open-Meteo's reply, which readings may show, captions files (order, limits,
+**161 app JVM tests and 98 Python tests passed**, with no failures or errors; lint reported **0 errors**. New JVM
+tests cover where the Now Playing card goes beside the clock and the scene name, weather codes, units, rounding the
+place in any locale, parsing and checking Open-Meteo's reply, which readings may show, captions files (order, limits,
 bad entries) and which caption is in force, frame-rate fitting on the inexact rates a Fire TV reports, measuring frame
-rates from frame times (also rounded to milliseconds), mixed-rate libraries, and backups of every new setting. A new
-Python test covers syncing a captions file (sent beside its video, refused when changed, left out when GlassOS would
-not read it). The upstream merge and each commit after it were also built, tested and linted on their own.
+rates from frame times (also rounded to milliseconds), mixed-rate libraries, backups of every new setting, and how the
+glass rim's bands bend the backdrop (each corner meeting its straight edges, a corner never gathered into a point). A
+new Python test covers syncing a captions file (sent beside its video, refused when changed, left out when GlassOS
+would not read it). The upstream merge and each commit after it were also built, tested and linted on their own.
 
 ## Now Playing, weather and captions
 
@@ -46,6 +47,12 @@ Close-up, before on the left: the shelf's corner and the user pill.
 
 ![Before and after close-ups of the shelf and the pill](validation/glass-detail.jpg)
 
+The rim over a generated grid, before on the left: the shelf's left end (top) and right end (bottom). Before, each
+band was scaled about the shelf's centre, so near the ends it also slid the grid along the edge and the lines broke
+into steps; now each band moves it straight in from the edge, and the lines cross the rim whole.
+
+![Before and after close-ups of the rim over a grid](validation/glass-rim.jpg)
+
 Live glass: the shelf following the playing test clip at three moments.
 
 ![Three moments of the shelf following the video](validation/live-glass-frames.jpg)
@@ -57,6 +64,9 @@ Live glass: the shelf following the playing test clip at three moments.
   emulator, and render thread time and frame times were within noise of Live glass off (16/22/30 ms against 17/22/27 ms
   at the 50th, 90th and 99th percentiles). It stopped and started again cleanly through Settings, another app and
   Home, with no errors.
+- The rim's six pieces per band (30 clipped draws per backdrop layer instead of 5) were within noise on the emulator:
+  with Live glass on over the test scenes, three 30-second runs each gave 16-17/29-32/36-40/53-57 ms at the 50th, 90th,
+  95th and 99th percentiles and 55-59% render thread before, and 16-17/30-32/38-40/57 ms and 58-62% after.
 
 ## Fixed during testing
 
@@ -80,14 +90,16 @@ critique (fidelity to Apple's glass, legibility at three metres, rendering artif
   clear glass dimmed in steps; the shelf's shadow was cut off square at its corners. Over bright art the shelf grew
   brighter through a slide's crossfade and then dropped in one frame when it ended (captured at about 12 frames a
   second over a bright test scene: 142, rising to 165, then 130 in one frame); it now fades evenly from 142 to 124,
-  with no step between captures larger than 4 levels.
+  with no step between captures larger than 4 levels. The rim's bands were scaled about the glass's centre, so on
+  the long shelf they also slid the backdrop along the edge and broke lines crossing the rim into steps; each band
+  now moves it along the rim's normal, its straight runs and corners drawn as separate clipped pieces.
 
 ## Limits
 
-Only the Android TV API 31 emulator was used. Not tested: a Fire TV (Live glass's cost on its GPU, Fire OS's handling
-of PixelCopy, a real mode switch and the Match Original Frame Rate setting, Open-Meteo's certificate on Fire OS),
-real media apps and casts for Now Playing, Apple's captions on the converted aerials (made, but not yet on the TV),
-and Android 7.0 or earlier, where Weather says it is unavailable. GitHub Actions was not run.
+Only the Android TV API 31 emulator was used. Not tested: a Fire TV (Live glass's and the rim's cost on its GPU, Fire
+OS's handling of PixelCopy, a real mode switch and the Match Original Frame Rate setting, Open-Meteo's certificate on
+Fire OS), real media apps and casts for Now Playing, Apple's captions on the converted aerials (made, but not yet on
+the TV), and Android 7.0 or earlier, where Weather says it is unavailable. GitHub Actions was not run.
 
 ---
 

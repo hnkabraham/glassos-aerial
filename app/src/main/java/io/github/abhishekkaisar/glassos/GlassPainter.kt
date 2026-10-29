@@ -23,8 +23,8 @@ import kotlin.math.sqrt
  * 1. The face: the backdrop behind the shape. Regular glass (panels full of text) shows the frosted copy; clear glass
  *    ([clear]: the shelf, the pills, Now Playing) shows the lightly blurred copy through Apple's clear colour transform,
  *    dimmed a little over bright art, with some frost over it.
- * 2. Lensing: the rim bends the backdrop. [BANDS] stroked bands around the edge each sample it magnified about the
- *    shape's centre, by A(1 - sqrt(1 - x^2)) across the bevel (x 1 at the edge), so content near the edge comes from
+ * 2. Lensing: the rim bends the backdrop. [BANDS] stroked bands around the edge each show it moved inward along the
+ *    rim's normal, by A(1 - sqrt(1 - x^2)) across the bevel (x 1 at the edge), so content near the edge comes from
  *    further in, most at the very rim. (Apple's rim also mirrors the content there; this one only bends it.)
  * 3. Shade and tint ([dark], [tint]); regular glass also gets a trace of grain and a top sheen ([grain], [sheen]),
  *    clear glass neither.
@@ -94,6 +94,27 @@ class GlassPainter {
          */
         private val clearFilter by lazy { ColorMatrixColorFilter(clearMatrix()) }
 
+        /**
+         * How each band of the lensing rim bends the backdrop (see [bands]), for glass [w] by [h] with corners of
+         * [radius], a bevel [bevel] deep and bending of [amount]. Each band shows what lies [LensBand.d] further in along
+         * its inward normal: d = amount (1 - sqrt(1 - x^2)) at the band's middle, x 1 at the edge, and at most 0.7 of
+         * the band's corner radius there, so a corner never gathers its whole arc into one point.
+         */
+        internal fun lensBands(w: Float, h: Float, radius: Float, bevel: Float, amount: Float): Array<LensBand> =
+            Array(BANDS) { k ->
+                val t0 = EDGES[k] * bevel
+                val t1 = EDGES[k + 1] * bevel
+                val tc = (t0 + t1) / 2f
+                val x = 1f - tc / bevel
+                val rho = radius - tc
+                var d = amount * (1f - sqrt((1f - x * x).coerceAtLeast(0f)))
+                if (rho > 1f) d = minOf(d, 0.7f * rho)
+                LensBand(t0, t1, d,
+                    sx = (1f - d / (w / 2f - tc)).coerceAtLeast(0.2f),
+                    sy = (1f - d / (h / 2f - tc)).coerceAtLeast(0.2f),
+                    s = if (rho > 1f) (rho - d) / rho else 0f)
+            }
+
         private fun clearMatrix(): ColorMatrix {
             val g = 1.057f
             val t = 0.954f
@@ -151,8 +172,13 @@ class GlassPainter {
     private val liteB = Sampler()
     private val frostA = Sampler()
     private val frostB = Sampler()
-    private val bandsA = Array(BANDS) { Sampler(Paint.Style.STROKE) }
-    private val bandsB = Array(BANDS) { Sampler(Paint.Style.STROKE) }
+    /** Per band, its six pieces (two runs, four corners); each draws with its own shader matrix. */
+    private val bandsA = Array(BANDS) { Array(6) { Sampler(Paint.Style.STROKE) } }
+    private val bandsB = Array(BANDS) { Array(6) { Sampler(Paint.Style.STROKE) } }
+    private val clip = RectF()
+    /** [lensBands] for the last shape drawn, kept while it stays the same. */
+    private val lensFor = FloatArray(5)
+    private var lensNow: Array<LensBand>? = null
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val grainPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { shader = Grain.newShader() }
     private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
@@ -305,10 +331,15 @@ class GlassPainter {
     }
 
     /**
-     * The lensing rim: [BANDS] stroked bands over the bevel, inner first, each sampling the backdrop magnified about
-     * the centre so it shows what lies further in, and each a little brighter by the glass's slope there, so the bevel
-     * reads as a lit, thicker edge (Apple's lensing is a wide zone, not an outline). Clear glass bends the light blur;
-     * regular glass its frosted copy, more gently. [dimIn]: the incoming layer's dimming (see [incomingFilter]).
+     * The lensing rim: [BANDS] stroked bands over the bevel, inner first, each showing the backdrop moved inward along
+     * the rim's normal by [lensBands], so the edge shows what lies further in, and each a little brighter by the glass's
+     * slope there, so the bevel reads as a lit, thicker edge (Apple's lensing is a wide zone, not an outline). Clear
+     * glass bends the light blur; regular glass its frosted copy, more gently. [dimIn]: the incoming layer's dimming
+     * (see [incomingFilter]).
+     *
+     * Each band is drawn in six clipped pieces, so nothing slides along the edge: the left and right runs move the
+     * backdrop across only, the top and bottom runs up or down only, and each corner towards its own centre; where an
+     * arc meets a run both move it by the same amount, so lines crossing the rim stay whole.
      */
     private fun bands(c: Canvas, r: RectF, radius: Float, l: BackLayer, isA: Boolean, alpha: Float, density: Float, dimIn: Float) {
         val src = (if (clear) l.lite else null) ?: l.bmp ?: return
@@ -317,31 +348,66 @@ class GlassPainter {
         val h = bevel(r, density)
         val amount = minOf(short * 0.5f, h * 2.4f) * lens * (if (clear) 1f else 0.55f)
         if (h < 2f || amount < 0.5f) return
-        val halfW = r.width() / 2f
-        val halfH = r.height() / 2f
+        val lb = lensOf(r.width(), r.height(), radius, h, amount)
         val cx = r.centerX()
         val cy = r.centerY()
         val set = if (isA) bandsA else bandsB
         val clearSrc = clear && src === l.lite
+        // Every glass here is rounder than its bevel is deep; one that is not would have its runs overlap, so it bends
+        // its whole rim about the centre instead, in one piece.
+        val split = radius > h + 1f
         for (k in BANDS - 1 downTo 0) {
-            val t0 = EDGES[k] * h
-            val t1 = EDGES[k + 1] * h
-            val x = 1f - (t0 + t1) / 2f / h
-            val d = amount * (1f - sqrt((1f - x * x).coerceAtLeast(0f)))
-            val sx = (1f - d / halfW).coerceAtLeast(0.2f)
-            val sy = (1f - d / halfH).coerceAtLeast(0.2f)
-            lm.set(inv); lm.preConcat(srcM)
-            lm.postScale(1f / sx, 1f / sy, cx, cy)
-            val p = set[k].use(src, lm, alpha)
+            val band = lb[k]
             // Each stroke overlaps the next band inward by a pixel, never outward: the outer band's edge lies exactly
             // on the silhouette, with no fringe outside it.
-            p.strokeWidth = t1 - t0 + 1f
-            p.colorFilter = if (clearSrc && dimIn > 0.002f) incomingFilter(k, dimIn) else bevelFilter(k, clearSrc)
-            val t = t0 + p.strokeWidth / 2f
+            val width = band.t1 - band.t0 + 1f
+            val t = band.t0 + width / 2f
             inset.set(r.left + t, r.top + t, r.right - t, r.bottom - t)
             val rr = (radius - t).coerceAtLeast(0f)
-            c.drawRoundRect(inset, rr, rr, p)
+            val filter = if (clearSrc && dimIn > 0.002f) incomingFilter(k, dimIn) else bevelFilter(k, clearSrc)
+            for (i in 0 until (if (split) 6 else 1)) {
+                lm.set(inv); lm.preConcat(srcM)
+                when {
+                    !split -> { clip.set(r); lm.postScale(1f / band.sx, 1f / band.sy, cx, cy) }
+                    i == 0 -> {
+                        // The left and right runs.
+                        if (r.height() <= 2 * radius + 0.5f) continue
+                        clip.set(r.left, r.top + radius, r.right, r.bottom - radius)
+                        lm.postScale(1f / band.sx, 1f, cx, cy)
+                    }
+                    i == 1 -> {
+                        // The top and bottom runs.
+                        if (r.width() <= 2 * radius + 0.5f) continue
+                        clip.set(r.left + radius, r.top, r.right - radius, r.bottom)
+                        lm.postScale(1f, 1f / band.sy, cx, cy)
+                    }
+                    else -> {
+                        // A corner, clockwise from the top left, about its own centre.
+                        val left = i == 2 || i == 5
+                        val top = i == 2 || i == 3
+                        val ccx = if (left) r.left + radius else r.right - radius
+                        val ccy = if (top) r.top + radius else r.bottom - radius
+                        clip.set(if (left) r.left else ccx, if (top) r.top else ccy, if (left) ccx else r.right, if (top) ccy else r.bottom)
+                        lm.postScale(1f / band.s, 1f / band.s, ccx, ccy)
+                    }
+                }
+                val p = set[k][i].use(src, lm, alpha)
+                p.strokeWidth = width
+                p.colorFilter = filter
+                c.save()
+                c.clipRect(clip)
+                c.drawRoundRect(inset, rr, rr, p)
+                c.restore()
+            }
         }
+    }
+
+    /** [lensBands] for this shape, worked out again only when it changes. */
+    private fun lensOf(w: Float, h: Float, radius: Float, bevel: Float, amount: Float): Array<LensBand> {
+        val f = lensFor
+        lensNow?.let { if (f[0] == w && f[1] == h && f[2] == radius && f[3] == bevel && f[4] == amount) return it }
+        f[0] = w; f[1] = h; f[2] = radius; f[3] = bevel; f[4] = amount
+        return lensBands(w, h, radius, bevel, amount).also { lensNow = it }
     }
 
     /**
@@ -515,3 +581,11 @@ class GlassPainter {
         if (r.height() > 2 * radius) c.drawLine(r.left, r.top + radius, r.left, r.bottom - radius, glintLine)
     }
 }
+
+/**
+ * One band of the lensing rim ([GlassPainter.lensBands]): it covers [t0] to [t1] across the bevel, measured from the
+ * edge, and shows the backdrop [d] further in. The left and right runs get it by scaling across by [sx] about the
+ * centre, the top and bottom runs by scaling up or down by [sy], and each corner by scaling by [s] about its own
+ * centre (0 when the band lies deeper than the corner is round).
+ */
+internal class LensBand(val t0: Float, val t1: Float, val d: Float, val sx: Float, val sy: Float, val s: Float)
