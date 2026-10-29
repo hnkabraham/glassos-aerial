@@ -474,9 +474,11 @@ class UserPill(ctx: Context) : View(ctx) {
         val g = Tone.pillGlass(Tone.pill, clear = true)
         glass.tint = g.tint + 0.15f * f
         glass.dark = g.dark
-        // Focused glass lights up from within, as on tvOS: a brighter glint and rim.
+        // Focused glass lights up from within, as on tvOS: a brighter glint and rim, and the light swings up towards
+        // the top edge as focus arrives, so the glint slides along the rim.
         glass.highlight = 0.40f - 0.18f * g.t + 0.45f * f
         glass.border = 0.14f - 0.06f * g.t + 0.10f * f
+        glass.light = GlassPainter.LIGHT + 22f * f
         glass.draw(c, this, rect, r)
 
         val cy = height / 2f

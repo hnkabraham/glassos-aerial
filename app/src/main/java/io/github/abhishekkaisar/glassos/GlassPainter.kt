@@ -58,16 +58,22 @@ class GlassPainter {
         private val bevelFilters = arrayOfNulls<ColorMatrixColorFilter>(BANDS * 2)
         /** How much of the frosted copy lies over clear glass's face (Apple mixes a light and a fully diffused blur). */
         private const val FROST = 0.24f
-        /** The light's direction on screen (top left), as an angle clockwise from the right, in degrees. */
-        private const val LIGHT = 225.0
+        /**
+         * The light's usual direction on screen (top left), as an angle clockwise from the right, in degrees. The
+         * corner glints are built for it and turned when [light] differs.
+         */
+        const val LIGHT = 225f
         /**
          * How tightly the glint gathers where the rim faces the light: |n·L| to this power, the same along the corners
          * and the straight edges, so the glint has no step where they meet (the long top edge at half the corners').
          */
         private const val FALLOFF = 2.0
-        /** Brightness of the rim at [deg] (its outward normal's angle): facing the light, or facing away a little less. */
-        private fun shine(deg: Double): Float {
-            val c = cos(Math.toRadians(deg - LIGHT))
+        /**
+         * Brightness of the rim at [deg] (its outward normal's angle) with the light at [light]: facing the light, or
+         * facing away a little less.
+         */
+        private fun shine(deg: Double, light: Double = LIGHT.toDouble()): Float {
+            val c = cos(Math.toRadians(deg - light))
             return (Math.pow(abs(c), FALLOFF) * (if (c >= 0) 1.0 else 0.6)).toFloat()
         }
 
@@ -139,6 +145,8 @@ class GlassPainter {
     /** Liquid Glass faces are smooth: a trace of grain only, enough to keep the upscaled blur from banding. */
     var grain = 0.10f
     var stroke = 1.5f
+    /** Where the light comes from ([LIGHT] unless set): focus swings it, so the glint slides round the rim. */
+    var light = LIGHT
     /**
      * Draw the parts that do not follow the backdrop (dark, tint, grain, sheen, rim) from one cached bitmap: one
      * textured pass instead of several full-size passes per frame. For large, static glass (the shelf).
@@ -186,6 +194,8 @@ class GlassPainter {
     private val glintLine = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.BUTT }
     /** Each corner's glint, a sweep around the corner's own centre, so its brightness follows the turning rim. */
     private val cornerShaders = arrayOfNulls<Shader>(4)
+    /** Each corner sweep's turn from [LIGHT] to [light]: one matrix per shader (API 25 keeps it by reference). */
+    private val cornerTurns = Array(4) { Matrix() }
     private val oval = RectF()
     private val hairline = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = 0x33000000 }
     private val sheenPaint = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -472,7 +482,7 @@ class GlassPainter {
     }
 
     private fun drawStatic(c: Canvas, r: RectF, radius: Float) {
-        val sk = "${r.left},${r.top},${r.width()},${r.height()},$radius,$dark,$guardDark,$hairAlpha,$tint,$tintColor,$grain,$sheen,$highlight,$border,$stroke,$clear,${Themes.current.id}"
+        val sk = "${r.left},${r.top},${r.width()},${r.height()},$radius,$dark,$guardDark,$hairAlpha,$tint,$tintColor,$grain,$sheen,$highlight,$border,$stroke,$light,$clear,${Themes.current.id}"
         if (sk != staticKey || staticBmp == null) {
             staticKey = sk
             // Not recycled: the last recorded frame may still draw the old one.
@@ -566,18 +576,22 @@ class GlassPainter {
         glint.alpha = (peak * 255).toInt()
         glintLine.strokeWidth = width
         if (radius > 0.5f) for (i in 0 until 4) {
+            // Turned about the corner's centre, so the brightest part of the arc follows the light.
+            cornerTurns[i].setRotate(light - LIGHT, cx[i], cy[i])
+            cornerShaders[i]!!.setLocalMatrix(cornerTurns[i])
             glint.shader = cornerShaders[i]
             oval.set(cx[i] - radius, cy[i] - radius, cx[i] + radius, cy[i] + radius)
             c.drawArc(oval, start[i], 90f, false, glint)
         }
         // The straight edges face up, right, down and left.
-        glintLine.color = alphaOf(Color.WHITE, peak * shine(270.0))
+        val l = light.toDouble()
+        glintLine.color = alphaOf(Color.WHITE, peak * shine(270.0, l))
         if (r.width() > 2 * radius) c.drawLine(r.left + radius, r.top, r.right - radius, r.top, glintLine)
-        glintLine.color = alphaOf(Color.WHITE, peak * shine(0.0))
+        glintLine.color = alphaOf(Color.WHITE, peak * shine(0.0, l))
         if (r.height() > 2 * radius) c.drawLine(r.right, r.top + radius, r.right, r.bottom - radius, glintLine)
-        glintLine.color = alphaOf(Color.WHITE, peak * shine(90.0))
+        glintLine.color = alphaOf(Color.WHITE, peak * shine(90.0, l))
         if (r.width() > 2 * radius) c.drawLine(r.left + radius, r.bottom, r.right - radius, r.bottom, glintLine)
-        glintLine.color = alphaOf(Color.WHITE, peak * shine(180.0))
+        glintLine.color = alphaOf(Color.WHITE, peak * shine(180.0, l))
         if (r.height() > 2 * radius) c.drawLine(r.left, r.top + radius, r.left, r.bottom - radius, glintLine)
     }
 }
