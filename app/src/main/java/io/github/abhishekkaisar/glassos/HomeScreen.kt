@@ -334,13 +334,20 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
             glass.border = 0.10f
             glass.cacheStatic = true
             glass.clear = true
-            // No shadow: the rows clip each child to its bounds (so off-screen rows are culled), which cut the shadow
-            // off square at the shelf's corners. The lit rim gives the glass its edge.
-            shadowAlpha = 0f
+            glass.edgeOutside = true
+            // A soft shadow that deepens over bright art. The rows clip each child to its bounds (so off-screen rows
+            // are culled), so the shelf leaves room for its shadow inside its own bounds.
+            shadowAlpha = 0.35f
+            shadowAdapts = true
+            shadowBlur = ctx.dp(16f)
+            shadowDy = ctx.dp(6f)
         }
-        content.addView(shelf, FrameLayout.LayoutParams(sw - 2 * shelfMargin, tileH + 2 * shelfPadV).apply {
-            leftMargin = shelfMargin
-            topMargin = row0Top - shelfPadV
+        // As far as the shadow reaches: its blur's spread (2.2 blurs, rounded up) plus its offset.
+        val room = (shelf.shadowBlur * 2.2f + shelf.shadowDy).toInt() + 2
+        shelf.shadowRoom = room.toFloat()
+        content.addView(shelf, FrameLayout.LayoutParams(sw - 2 * shelfMargin + 2 * room, tileH + 2 * shelfPadV + 2 * room).apply {
+            leftMargin = shelfMargin - room
+            topMargin = row0Top - shelfPadV - room
         })
         chevron = Chevron(ctx)
         home.addView(chevron, FrameLayout.LayoutParams(ctx.dpi(18f), ctx.dpi(9f), Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
@@ -362,6 +369,7 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         val pillH = ctx.dpi(30f)
         movePill = GlassBox(ctx, pillH / 2f).apply {
             glass.textGuard = true
+            glass.edgeOutside = true
             glass.tint = 0.10f
             glass.dark = 0.34f
             glass.sheen = 0.06f

@@ -77,6 +77,15 @@ internal inline fun View.animateNow(props: android.view.ViewPropertyAnimator.() 
 open class GlassBox(ctx: Context, var radius: Float) : FrameLayout(ctx) {
     val glass = GlassPainter()
     var shadowAlpha = 0.38f
+    var shadowBlur = ctx.dp(26f)
+    var shadowDy = ctx.dp(12f)
+    /** The shadow deepens over bright art, as Apple's does: from 30% of [shadowAlpha] over dark art to all of it. */
+    var shadowAdapts = false
+    /**
+     * Room left round the glass inside this view, which draws the glass inset by it: for glass whose parent clips
+     * it to its bounds (the shelf), so its shadow and edge still show. Only for glass with no children.
+     */
+    var shadowRoom = 0f
     private val rect = RectF()
     private val sp = Paint()
 
@@ -88,9 +97,14 @@ open class GlassBox(ctx: Context, var radius: Float) : FrameLayout(ctx) {
     }
 
     override fun onDraw(c: Canvas) {
-        rect.set(0f, 0f, width.toFloat(), height.toFloat())
+        val m = shadowRoom
+        rect.set(m, m, width - m, height - m)
+        val a = if (shadowAdapts) shadowAlpha * (0.3f + 0.7f * glass.dimNow / 0.35f) else shadowAlpha
         // The glass's backdrop is opaque inside the rounded rect, so the shadow under its middle is never seen.
-        GlowCache.draw(c, rect.width(), rect.height(), radius, dp(26f), Color.BLACK, shadowAlpha, dp(12f), sp, hollow = Backdrop.a.bmp != null)
+        c.save()
+        c.translate(m, m)
+        GlowCache.draw(c, rect.width(), rect.height(), radius, shadowBlur, Color.BLACK, a, shadowDy, sp, hollow = Backdrop.a.bmp != null)
+        c.restore()
         glass.draw(c, this, rect, radius)
     }
 }
@@ -389,6 +403,7 @@ class UserPill(ctx: Context) : View(ctx) {
 
     private val glass = GlassPainter().apply {
         tint = 0.20f; tintColor = 0xFFFFF4E8.toInt(); sheen = 0.10f; highlight = 0.40f; border = 0.14f; stroke = ctx.dp(0.6f); clear = true
+        edgeOutside = true
     }
     private val focus = FocusAnim(this, 1.08f) { invalidate() }
     private val rect = RectF()

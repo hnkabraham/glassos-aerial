@@ -56,6 +56,9 @@ class GlassPainter {
         private const val BEVEL_GAIN = 0.10f
         private const val BEVEL_LIFT = 8f
         private val bevelFilters = arrayOfNulls<ColorMatrixColorFilter>(BANDS * 2)
+        /** [edgeOutside]'s contact shadow: each stroke's width (in [stroke]s) and strength (of the hairline's opacity). */
+        private val CONTACT_W = floatArrayOf(0.8f, 2.2f)
+        private val CONTACT_A = floatArrayOf(1f, 0.4f)
         /** How much of the frosted copy lies over clear glass's face (Apple mixes a light and a fully diffused blur). */
         private const val FROST = 0.24f
         /**
@@ -161,6 +164,14 @@ class GlassPainter {
      * from the backdrop once per image and position).
      */
     var textGuard = false
+    /**
+     * Over bright art the glass's edge is defined by a soft dark line just outside it, a contact shadow, rather than
+     * by darkening its outermost pixels: for glass whose parent lets it draw past its bounds and that floats over the
+     * scenery (the shelf, the pills, Now Playing). Panels over a dimmed screen keep the line inside.
+     */
+    var edgeOutside = false
+    /** Clear glass's dimming now (0 to 0.35), for a shadow that deepens over bright art as Apple's does. */
+    val dimNow: Float get() = maxOf(dimShown, 0f)
 
     /** A paint drawing one backdrop bitmap through its own shader, rebuilt only when the bitmap changes. */
     private class Sampler(style: Paint.Style = Paint.Style.FILL) {
@@ -198,6 +209,7 @@ class GlassPainter {
     private val cornerTurns = Array(4) { Matrix() }
     private val oval = RectF()
     private val hairline = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = 0x33000000 }
+    private val contact = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val sheenPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val depthPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val m = Matrix()
@@ -260,8 +272,19 @@ class GlassPainter {
             fill.color = 0xFF141A30.toInt()
             c.drawRoundRect(r, radius, radius, fill)
         }
-        if (cacheStatic) { drawStatic(c, r, radius); return }
-        drawOverlay(c, r, radius)
+        if (cacheStatic) drawStatic(c, r, radius) else drawOverlay(c, r, radius)
+        if (edgeOutside && hairAlpha > 0f) drawContact(c, r, radius)
+    }
+
+    /** [edgeOutside]'s contact shadow: a thin dark line against the silhouette and a fainter, wider one round it. */
+    private fun drawContact(c: Canvas, r: RectF, radius: Float) {
+        for (i in CONTACT_W.indices) {
+            contact.strokeWidth = stroke * CONTACT_W[i]
+            contact.color = alphaOf(Color.BLACK, hairAlpha * CONTACT_A[i])
+            val h = contact.strokeWidth / 2f
+            inset.set(r.left - h, r.top - h, r.right + h, r.bottom + h)
+            c.drawRoundRect(inset, radius + h, radius + h, contact)
+        }
     }
 
     /** The backdrop behind [r] and its refracting rim, for one layer ([isA]: the current one, else the incoming one). */
@@ -482,7 +505,7 @@ class GlassPainter {
     }
 
     private fun drawStatic(c: Canvas, r: RectF, radius: Float) {
-        val sk = "${r.left},${r.top},${r.width()},${r.height()},$radius,$dark,$guardDark,$hairAlpha,$tint,$tintColor,$grain,$sheen,$highlight,$border,$stroke,$light,$clear,${Themes.current.id}"
+        val sk = "${r.left},${r.top},${r.width()},${r.height()},$radius,$dark,$guardDark,${if (edgeOutside) 0f else hairAlpha},$tint,$tintColor,$grain,$sheen,$highlight,$border,$stroke,$light,$clear,${Themes.current.id}"
         if (sk != staticKey || staticBmp == null) {
             staticKey = sk
             // Not recycled: the last recorded frame may still draw the old one.
@@ -531,10 +554,11 @@ class GlassPainter {
         }
         if (sheenPaint.shader != null) c.drawRoundRect(r, radius, radius, sheenPaint)
         c.drawRoundRect(r, radius, radius, depthPaint)
-        // A dark hairline at the silhouette gives the glass its edge over bright art (none over dark art).
+        // A dark hairline at the silhouette gives the glass its edge over bright art (none over dark art), unless the
+        // edge is drawn outside it ([edgeOutside]).
         hairline.strokeWidth = stroke * 0.6f
         var h = hairline.strokeWidth / 2f
-        if (hairAlpha > 0f) {
+        if (hairAlpha > 0f && !edgeOutside) {
             hairline.color = alphaOf(Color.BLACK, hairAlpha)
             inset.set(r.left + h, r.top + h, r.right - h, r.bottom - h)
             c.drawRoundRect(inset, radius - h, radius - h, hairline)

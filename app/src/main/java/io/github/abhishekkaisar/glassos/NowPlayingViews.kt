@@ -203,6 +203,7 @@ private class ArtPainter {
 class NowPlayingPill(ctx: Context) : View(ctx) {
     private val glass = GlassPainter().apply {
         tint = 0.20f; tintColor = 0xFFFFF4E8.toInt(); sheen = 0.10f; highlight = 0.40f; border = 0.14f; stroke = ctx.dp(0.6f); clear = true
+        edgeOutside = true
     }
     private val gp = Paint()
     private val rect = RectF()
@@ -296,7 +297,10 @@ class NowPlayingPill(ctx: Context) : View(ctx) {
  * blurred backdrop of its own) it is a clear dark card instead of frosted glass.
  */
 class NowPlayingCard(ctx: Context, private val sampleBackdrop: Boolean) : View(ctx) {
-    private val glass = GlassPainter().apply { tint = 0.10f; dark = 0.28f; sheen = 0.08f; highlight = 0.36f; border = 0.16f; stroke = ctx.dp(0.8f); textGuard = true }
+    private val glass = GlassPainter().apply {
+        tint = 0.10f; dark = 0.28f; sheen = 0.08f; highlight = 0.36f; border = 0.16f; stroke = ctx.dp(0.8f); textGuard = true
+        edgeOutside = true
+    }
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val sheenPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rim = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = ctx.dp(0.8f) }
