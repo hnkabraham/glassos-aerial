@@ -251,8 +251,10 @@ The shelf, the user pill and the Now Playing capsule are clear glass, as on tvOS
 blurred, dimmed a little over bright art so their text stays readable, with no grain. Panels full of text (Settings,
 Control Center, menus, folders, Scenery, setup) stay frosted, and darken over bright art as far as their text needs.
 Every glass edge bends the scenery behind it, more on larger glass, and is lit by its slope, with a glint where the
-light from the top left meets it; the user pill lights up when focused. It is all drawn from blurs made once per
-image, never per frame. Reduce transparency still draws plain solid panels.
+light from above and a little to the left meets it, brightest along the top edge; the user pill lights up when
+focused, and its glint slides up the rim. Over bright art a soft dark edge outlines the shelf and the pills, and the
+shelf casts a soft shadow. It is all drawn from blurs made once per image, never per frame. Reduce transparency still
+draws plain solid panels.
 
 ### Live glass
 

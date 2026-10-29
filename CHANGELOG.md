@@ -42,12 +42,14 @@
   backdrop (five bands, thinner towards the edge, over a bevel from about 14 dp on a pill to 22 dp on a panel;
   displacement A(1 - sqrt(1 - x²)), strongest at the very edge, along the rim's normal: each band is drawn as clipped
   straight runs and corners, so nothing slides along the edge and lines crossing the rim stay whole) and is lit by its
-  slope, so the edge reads as thick glass; a specular glint from a light at the top left (|n·L|², brightest on the
-  top-left and bottom-right corners) rises when the user pill is focused; a dark hairline shows only over bright art.
-  The shelf drops its shadow (it was cut off square at the corners). Settings values, captions and Control Center
-  labels are brighter. Through a crossfade each slide's part of the clear glass is dimmed for its own art, so the
-  glass no longer jumps in brightness when the fade ends; text panels change their darkening once, halfway through. No
-  per-frame blur; Reduce transparency is unchanged.
+  slope, so the edge reads as thick glass; a specular glint from a light above and a little to the left (|n·L|²,
+  brightest along the top edge and the top-left corner) rises and swings up the rim when the user pill is focused;
+  over bright art a soft dark edge lies just outside the shelf, the pills and Now Playing (a hairline inside panels).
+  The shelf casts a soft shadow that deepens over bright art (it was cut off square at the corners; the shelf now
+  leaves room for it in its own bounds) and is a little darker, so white tiles stand out. Settings values, captions
+  and Control Center labels are brighter. Through a crossfade each slide's part of the clear glass is dimmed for its
+  own art, so the glass no longer jumps in brightness when the fade ends; text panels change their darkening once,
+  halfway through. No per-frame blur; Reduce transparency is unchanged.
 - **Live glass:** **Settings > Live glass** (off by default until tried on a Fire TV) feeds the glass from the playing
   video: about four times a second the frame on screen is copied at 480x270 (PixelCopy off the main thread on Android
   7 and later, TextureView.getBitmap before), averaged with the last, blurred on a worker thread into both copies the

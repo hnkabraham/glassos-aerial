@@ -53,6 +53,12 @@ into steps; now each band moves it straight in from the edge, and the lines cros
 
 ![Before and after close-ups of the rim over a grid](validation/glass-rim.jpg)
 
+Finishing touches, before on the left: the shelf's left end over the grid (a soft shadow and a dark edge just outside
+it), the shelf over the desert (a brighter top edge, a slightly darker face) and the focused pill (its glint higher on
+the rim, a dark edge outside it).
+
+![Before and after close-ups of the shelf's shadow, its top edge and the focused pill](validation/glass-polish.jpg)
+
 Live glass: the shelf following the playing test clip at three moments.
 
 ![Three moments of the shelf following the video](validation/live-glass-frames.jpg)
@@ -67,6 +73,11 @@ Live glass: the shelf following the playing test clip at three moments.
 - The rim's six pieces per band (30 clipped draws per backdrop layer instead of 5) were within noise on the emulator:
   with Live glass on over the test scenes, three 30-second runs each gave 16-17/29-32/36-40/53-57 ms at the 50th, 90th,
   95th and 99th percentiles and 55-59% render thread before, and 16-17/30-32/38-40/57 ms and 58-62% after.
+- The shelf's shadow cost a little on the emulator: two alternating 30-second runs with Live glass on gave 17-18 and
+  19-20 ms at the median, 32-36 and 36 ms at the 90th percentile, and 62-65% and 65-66% render thread, without and
+  with it. The light's new angle measured 18 levels brighter on the shelf's top edge over the desert; the darker shelf
+  took a white tile against it from 3.7:1 to 4.15:1; focusing the pill raised its top edge 4 levels and dimmed its ends
+  3 to 4.
 
 ## Fixed during testing
 
