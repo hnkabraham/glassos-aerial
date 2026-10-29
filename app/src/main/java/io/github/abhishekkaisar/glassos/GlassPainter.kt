@@ -55,7 +55,7 @@ class GlassPainter {
         /** The bevel's light at its edge: brighter by 10% plus 8 levels, less further in. */
         private const val BEVEL_GAIN = 0.10f
         private const val BEVEL_LIFT = 8f
-        private val bevelFilters = arrayOfNulls<ColorMatrixColorFilter>(BANDS * 10)
+        private val bevelFilters = arrayOfNulls<ColorMatrixColorFilter>(BANDS * 2)
         /** How much of the frosted copy lies over clear glass's face (Apple mixes a light and a fully diffused blur). */
         private const val FROST = 0.24f
         /** The light's direction on screen (top left), as an angle clockwise from the right, in degrees. */
@@ -71,40 +71,38 @@ class GlassPainter {
             return (Math.pow(abs(c), FALLOFF) * (if (c >= 0) 1.0 else 0.6)).toFloat()
         }
 
-        /** Band [k]'s filter: its share of the bevel's light, after the clear face's colour at [dim] (null for regular). */
-        private fun bevelFilter(k: Int, dim: Float?): ColorMatrixColorFilter {
-            val i = k * 10 + (if (dim == null) 9 else Math.round(dim / 0.35f * 8f).coerceIn(0, 8))
+        /** Band [k]'s filter: its share of the bevel's light, after the clear face's colour for [clear] glass. */
+        private fun bevelFilter(k: Int, clear: Boolean): ColorMatrixColorFilter {
+            val i = k * 2 + (if (clear) 1 else 0)
             bevelFilters[i]?.let { return it }
+            return ColorMatrixColorFilter(bevelMatrix(k, clear)).also { bevelFilters[i] = it }
+        }
+
+        private fun bevelMatrix(k: Int, clear: Boolean): ColorMatrix {
             val s = SLOPE[k]
             val g = 1f + BEVEL_GAIN * s
             val light = ColorMatrix(floatArrayOf(g, 0f, 0f, 0f, BEVEL_LIFT * s, 0f, g, 0f, 0f, BEVEL_LIFT * s,
                 0f, 0f, g, 0f, BEVEL_LIFT * s, 0f, 0f, 0f, 1f, 0f))
-            if (dim != null) light.preConcat(clearMatrix(dim))
-            return ColorMatrixColorFilter(light).also { bevelFilters[i] = it }
+            if (clear) light.preConcat(clearMatrix())
+            return light
         }
-        /** The clear face's colour transform at 9 dimming steps (0 to 35% darker over bright art, per Apple's HIG). */
-        private val clearFilters = arrayOfNulls<ColorMatrixColorFilter>(9)
 
         /**
          * Apple's clear glass as fitted from captures: out = g*C + (T - g)*Y + E, with chroma gain g 1.057, luma
-         * transfer T 0.954 and a white emission of about 0.126, then darkened by [dim].
+         * transfer T 0.954 and a white emission of about 0.126. Its dimming over bright art is drawn separately (see
+         * [face]).
          */
-        private fun clearFilter(dim: Float): ColorMatrixColorFilter {
-            val i = Math.round(dim / 0.35f * 8f).coerceIn(0, 8)
-            clearFilters[i]?.let { return it }
-            return ColorMatrixColorFilter(clearMatrix(i * 0.35f / 8f)).also { clearFilters[i] = it }
-        }
+        private val clearFilter by lazy { ColorMatrixColorFilter(clearMatrix()) }
 
-        private fun clearMatrix(dim: Float): ColorMatrix {
+        private fun clearMatrix(): ColorMatrix {
             val g = 1.057f
             val t = 0.954f
             val e = 32f
-            val k = 1f - Math.round(dim / 0.35f * 8f).coerceIn(0, 8) * 0.35f / 8f
             val y = floatArrayOf(0.2126f, 0.7152f, 0.0722f)
             val m = FloatArray(20)
             for (row in 0 until 3) {
-                for (col in 0 until 3) m[row * 5 + col] = ((if (row == col) g else 0f) + (t - g) * y[col]) * k
-                m[row * 5 + 4] = e * k
+                for (col in 0 until 3) m[row * 5 + col] = (if (row == col) g else 0f) + (t - g) * y[col]
+                m[row * 5 + 4] = e
             }
             m[18] = 1f
             return ColorMatrix(m)
@@ -177,16 +175,30 @@ class GlassPainter {
     private var staticBmp: Bitmap? = null
     private var staticKey = ""
     private val staticPaint = Paint(Paint.FILTER_BITMAP_FLAG)
-    private var dimOf: Bitmap? = null
-    private var dimRect = ""
-    private var dim = 0f
-    /** The dimming drawn now, easing towards [dim]. */
+    /** What [measureUnder] found behind the glass in one backdrop layer's image, kept until the image or place changes. */
+    private class Under {
+        var of: Bitmap? = null
+        var rect = ""
+        /** Clear glass's dimming over this image. */
+        var dim = 0f
+        /** The dark hairline's opacity. */
+        var hair = 0f
+        /** With [textGuard], the dark this glass needs over the image for its text (at least [dark]). */
+        var guard = 0f
+    }
+
+    /** Behind the glass in the current slide (layer A) and in the one fading in over it (layer B). */
+    private val underA = Under()
+    private val underB = Under()
+    /** Layer A's dimming drawn now, easing towards what its image needs. */
     private var dimShown = -1f
-    private var luma = 0.2f
     /** The dark hairline's opacity now (see [measureUnder]). */
     private var hairAlpha = 0f
     /** With [textGuard], the dark this glass needs over the art behind it for its text (at least [dark]). */
     private var guardDark = 0f
+    /** The incoming layer's face and band filters, darkened by its own dimming; made once per image. */
+    private val incomingFilters = arrayOfNulls<ColorMatrixColorFilter>(BANDS + 1)
+    private var incomingDim = -1f
 
     fun draw(c: Canvas, v: View, r: RectF, radius: Float) {
         if (Effects.reduceTransparency) { drawSolid(c, r, radius); return }
@@ -197,9 +209,17 @@ class GlassPainter {
             val density = v.resources.displayMetrics.density
             face(c, r, radius, a, true, density)
             // Still easing: another frame (a few at most, after the art behind changed).
-            if (dimShown != dim) v.postInvalidateOnAnimation()
+            if (dimShown != underA.dim) v.postInvalidateOnAnimation()
             val b = Backdrop.b
-            if (b.bmp != null && b.alpha > 0.004f) face(c, r, radius, b, false, density)
+            val fading = b.bmp != null && b.alpha > 0.004f
+            if (fading) face(c, r, radius, b, false, density)
+            // Only a slide that has just faded in may carry its dimming over (see [face]), not one shown long ago.
+            else underB.of = null
+            // The text guard and the hairline follow whichever slide shows more, so through a fade they change once,
+            // halfway, where the crossfade hides it (and large glass redraws its cached rim once, as before).
+            val u = if (fading && b.alpha >= 0.5f) underB else underA
+            guardDark = u.guard
+            hairAlpha = u.hair
         } else {
             fill.color = 0xFF141A30.toInt()
             c.drawRoundRect(r, radius, radius, fill)
@@ -211,24 +231,37 @@ class GlassPainter {
     /** The backdrop behind [r] and its refracting rim, for one layer ([isA]: the current one, else the incoming one). */
     private fun face(c: Canvas, r: RectF, radius: Float, l: BackLayer, isA: Boolean, density: Float) {
         val heavy = l.bmp ?: return
-        val lite = l.lite
         val alpha = l.alpha
+        // Clear glass shows the light blur when the layer has one.
+        val lite = if (clear) l.lite else null
+        val under = lite ?: heavy
+        val underM = if (lite != null) l.liteM else l.m
         if (isA) {
-            measureUnder(r, l, if (clear && lite != null) lite else heavy, if (clear && lite != null) l.liteM else l.m)
+            val was = underA.of
+            measureUnder(r, under, underM, underA)
+            if (underA.of !== was && underA.of === underB.of) {
+                // The slide that was fading in is now the current one. It was drawn at its own dimming all through the
+                // fade, so the dimming carries on from there rather than easing over from the old slide's.
+                dimShown = underA.dim
+            }
             // The dimming eases towards what the art behind needs, so Live glass's new frames never step it.
+            val dim = underA.dim
             dimShown = if (dimShown < 0f) dim else dimShown + (dim - dimShown) * 0.35f
             if (Math.abs(dim - dimShown) < 0.005f) dimShown = dim
-        }
+        } else measureUnder(r, under, underM, underB)
+        // The incoming layer is drawn over the current one, so a dark fill would darken both: its own dimming goes
+        // into its colour filters instead (the same darkening, as the fill gives the current layer).
+        val dimIn = if (isA) 0f else underB.dim
         // The incoming layer's face only inside the bevel: its own bands cover the rim, so the rim crossfades cleanly.
         val faceRect = if (isA || lens <= 0f) r else bevelInset(r, density)
         val faceRadius = if (faceRect === r) radius else (radius - (faceRect.left - r.left)).coerceAtLeast(0f)
-        if (clear && lite != null) {
+        if (lite != null) {
             lm.set(inv); lm.preConcat(l.liteM)
             val p = (if (isA) liteA else liteB).use(lite, lm, alpha)
-            p.colorFilter = clearFilter(0f)
+            p.colorFilter = if (dimIn > 0.002f) incomingFilter(BANDS, dimIn) else clearFilter
             c.drawRoundRect(faceRect, faceRadius, faceRadius, p)
             // The rim bends the light blur; the dimming and then the frost lie evenly over face and rim alike.
-            if (lens > 0f) bands(c, r, radius, l, isA, alpha, density)
+            if (lens > 0f) bands(c, r, radius, l, isA, alpha, density, dimIn)
             if (isA && dimShown > 0.002f) {
                 fill.color = alphaOf(Color.BLACK, dimShown)
                 c.drawRoundRect(r, radius, radius, fill)
@@ -238,8 +271,20 @@ class GlassPainter {
         } else {
             lm.set(inv); lm.preConcat(l.m)
             c.drawRoundRect(faceRect, faceRadius, faceRadius, (if (isA) faceA else faceB).use(heavy, lm, alpha))
-            if (lens > 0f) bands(c, r, radius, l, isA, alpha, density)
+            if (lens > 0f) bands(c, r, radius, l, isA, alpha, density, 0f)
         }
+    }
+
+    /**
+     * The incoming layer's filter darkened by its [dim]: band [i]'s, or the clear face's for [BANDS]. The same as the
+     * dark fill over the current layer: everything it draws scaled by 1 - dim.
+     */
+    private fun incomingFilter(i: Int, dim: Float): ColorMatrixColorFilter {
+        if (dim != incomingDim) { incomingDim = dim; incomingFilters.fill(null) }
+        incomingFilters[i]?.let { return it }
+        val cm = if (i == BANDS) clearMatrix() else bevelMatrix(i, true)
+        cm.postConcat(ColorMatrix().apply { setScale(1f - dim, 1f - dim, 1f - dim, 1f) })
+        return ColorMatrixColorFilter(cm).also { incomingFilters[i] = it }
     }
 
     /** The bevel's width for [r] (see [bands]). */
@@ -263,9 +308,9 @@ class GlassPainter {
      * The lensing rim: [BANDS] stroked bands over the bevel, inner first, each sampling the backdrop magnified about
      * the centre so it shows what lies further in, and each a little brighter by the glass's slope there, so the bevel
      * reads as a lit, thicker edge (Apple's lensing is a wide zone, not an outline). Clear glass bends the light blur;
-     * regular glass its frosted copy, more gently.
+     * regular glass its frosted copy, more gently. [dimIn]: the incoming layer's dimming (see [incomingFilter]).
      */
-    private fun bands(c: Canvas, r: RectF, radius: Float, l: BackLayer, isA: Boolean, alpha: Float, density: Float) {
+    private fun bands(c: Canvas, r: RectF, radius: Float, l: BackLayer, isA: Boolean, alpha: Float, density: Float, dimIn: Float) {
         val src = (if (clear) l.lite else null) ?: l.bmp ?: return
         val srcM = if (src === l.lite) l.liteM else l.m
         val short = minOf(r.width(), r.height())
@@ -277,7 +322,7 @@ class GlassPainter {
         val cx = r.centerX()
         val cy = r.centerY()
         val set = if (isA) bandsA else bandsB
-        val face = if (clear && src === l.lite) 0f else null
+        val clearSrc = clear && src === l.lite
         for (k in BANDS - 1 downTo 0) {
             val t0 = EDGES[k] * h
             val t1 = EDGES[k + 1] * h
@@ -291,7 +336,7 @@ class GlassPainter {
             // Each stroke overlaps the next band inward by a pixel, never outward: the outer band's edge lies exactly
             // on the silhouette, with no fringe outside it.
             p.strokeWidth = t1 - t0 + 1f
-            p.colorFilter = bevelFilter(k, face)
+            p.colorFilter = if (clearSrc && dimIn > 0.002f) incomingFilter(k, dimIn) else bevelFilter(k, clearSrc)
             val t = t0 + p.strokeWidth / 2f
             inset.set(r.left + t, r.top + t, r.right - t, r.bottom - t)
             val rr = (radius - t).coerceAtLeast(0f)
@@ -303,16 +348,16 @@ class GlassPainter {
      * How bright the art behind [r] is (mean plus half its spread, so a bright patch behind part of a wide shelf
      * counts), measured from [bmp] once per image and position, never per frame. It sets clear glass's dimming (0 over
      * dark art, up to 35% over bright art, Apple's HIG for clear glass on media), how far [textGuard] darkens, and
-     * the hairline's strength.
+     * the hairline's strength, into [u] (one per backdrop layer).
      */
-    private fun measureUnder(r: RectF, l: BackLayer, bmp: Bitmap, bmpM: Matrix) {
+    private fun measureUnder(r: RectF, bmp: Bitmap, bmpM: Matrix, u: Under) {
         onScreen.set(r)
         m.mapRect(onScreen)
         val k = "${onScreen.left.toInt() / 8},${onScreen.top.toInt() / 8},${onScreen.width().toInt() / 8},${onScreen.height().toInt() / 8}"
-        if (bmp === dimOf && k == dimRect) return
-        dimOf = bmp
-        dimRect = k
-        luma = try {
+        if (bmp === u.of && k == u.rect) return
+        u.of = bmp
+        u.rect = k
+        val luma = try {
             bmpM.invert(liteInv)
             var sum = 0.0
             var sq = 0.0
@@ -331,11 +376,11 @@ class GlassPainter {
             (mean + 0.5 * sqrt((sq / n - mean * mean).coerceAtLeast(0.0))).toFloat().coerceIn(0f, 1f)
         } catch (e: Exception) { 0.2f }
         val t = ((luma - 0.40f) / 0.40f).coerceIn(0f, 1f)
-        dim = if (clear) t * t * (3 - 2 * t) * 0.35f else 0f
+        u.dim = if (clear) t * t * (3 - 2 * t) * 0.35f else 0f
         // The dark hairline only where it defines the edge: over bright art, not over night skies.
         val h = ((luma - 0.45f) / 0.40f).coerceIn(0f, 1f)
-        hairAlpha = Math.round(0.22f * h * h * (3 - 2 * h) * 20f) / 20f
-        guardDark = if (!textGuard) 0f else {
+        u.hair = Math.round(0.22f * h * h * (3 - 2 * h) * 20f) / 20f
+        u.guard = if (!textGuard) 0f else {
             var d = dark
             var guard = 0
             while (Tone.contrast(luma, tint, d) < 4.5f && d < 0.75f && guard++ < 60) d += 0.01f

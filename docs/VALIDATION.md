@@ -1,6 +1,6 @@
 # GlassOS Aerial 1.7 (unreleased) validation
 
-Validated on October 28, 2026 on the Android TV API 31 emulator (ARM64, 1920 × 1080), debug build, on branch
+Validated on October 28 and 29, 2026 on the Android TV API 31 emulator (ARM64, 1920 × 1080), debug build, on branch
 `feature/1.7`: the upstream focus fix, Now Playing, weather, place captions, Match frame rate, Liquid Glass and Live
 glass. **Not yet installed on a physical Fire TV.** The scenes are generated test clips and GlassOS's built-in night
 desert; the music is a debug-only demo session; the captions are invented; the weather is for the emulator's
@@ -77,7 +77,10 @@ critique (fidelity to Apple's glass, legibility at three metres, rendering artif
   screensaver's first still.
 - **Glass:** the bending rim was too thin to see and its outermost band spilled half a pixel outside the glass; the
   clear face lowered the pill's contrast below what its guard assumed; Settings over bright art fell below 4.5:1;
-  clear glass dimmed in steps; the shelf's shadow was cut off square at its corners.
+  clear glass dimmed in steps; the shelf's shadow was cut off square at its corners. Over bright art the shelf grew
+  brighter through a slide's crossfade and then dropped in one frame when it ended (captured at about 12 frames a
+  second over a bright test scene: 142, rising to 165, then 130 in one frame); it now fades evenly from 142 to 124,
+  with no step between captures larger than 4 levels.
 
 ## Limits
 

@@ -43,8 +43,10 @@
   A(1 - sqrt(1 - x²)), strongest at the very edge) and is lit by its slope, so the edge reads as
   thick glass; a specular glint from a light at the top left (|n·L|², brightest on the top-left and bottom-right
   corners) rises when the user pill is focused; a dark hairline shows only over bright art. The shelf drops its shadow
-  (it was cut off square at the corners). Settings values, captions and Control Center labels are brighter. No
-  per-frame blur; Reduce transparency is unchanged.
+  (it was cut off square at the corners). Settings values, captions and Control Center labels are brighter. Through
+  a crossfade each slide's part of the clear glass is dimmed for its own art, so the glass no longer jumps in
+  brightness when the fade ends; text panels change their darkening once, halfway through. No per-frame blur;
+  Reduce transparency is unchanged.
 - **Live glass:** **Settings > Live glass** (off by default until tried on a Fire TV) feeds the glass from the playing
   video: about four times a second the frame on screen is copied at 480x270 (PixelCopy off the main thread on Android
   7 and later, TextureView.getBitmap before), averaged with the last, blurred on a worker thread into both copies the
