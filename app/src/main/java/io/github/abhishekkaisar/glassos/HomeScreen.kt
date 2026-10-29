@@ -328,7 +328,8 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
         // Clear glass: the art shows through softly blurred and mildly darkened, with a bright thin top rim.
         shelf = GlassBox(ctx, sw * 48f / 1920f).apply {
             glass.tint = 0.03f
-            glass.dark = 0.16f
+            // Dark enough that white tiles stand out from the clear glass over light art.
+            glass.dark = 0.22f
             glass.sheen = 0.05f
             glass.highlight = 0.62f
             glass.border = 0.10f
