@@ -40,7 +40,7 @@
   move hint and the Now Playing card) stay frosted, and now darken over bright art as far as white text needs for
   4.5:1; the pills' contrast guard models the clearer face (5:1). Every glass surface's rim bends the backdrop (five
   bands, thinner towards the edge, over a bevel from about 14 dp on a pill to 22 dp on a panel; displacement
-  A(1 - sqrt(1 - x²)), mirrored at the very edge as on Apple's glass) and is lit by its slope, so the edge reads as
+  A(1 - sqrt(1 - x²)), strongest at the very edge) and is lit by its slope, so the edge reads as
   thick glass; a specular glint from a light at the top left (|n·L|², brightest on the top-left and bottom-right
   corners) rises when the user pill is focused; a dark hairline shows only over bright art. The shelf drops its shadow
   (it was cut off square at the corners). Settings values, captions and Control Center labels are brighter. No

@@ -25,8 +25,9 @@ import kotlin.math.sqrt
  *    dimmed a little over bright art, with some frost over it.
  * 2. Lensing: the rim bends the backdrop. [BANDS] stroked bands around the edge each sample it magnified about the
  *    shape's centre, by A(1 - sqrt(1 - x^2)) across the bevel (x 1 at the edge), so content near the edge comes from
- *    further in, mirrored at the very rim as on Apple's glass.
- * 3. Shade, tint, grain and a top sheen ([dark], [tint], [grain], [sheen]), as before.
+ *    further in, most at the very rim. (Apple's rim also mirrors the content there; this one only bends it.)
+ * 3. Shade and tint ([dark], [tint]); regular glass also gets a trace of grain and a top sheen ([grain], [sheen]),
+ *    clear glass neither.
  * 4. Light on the rim: a dark hairline at the silhouette, a faint rim all round, and a specular glint: with the light
  *    from the top left, each part of the rim shines by how squarely it faces it (|n·L|²), so the top-left and
  *    bottom-right corners catch it most ([highlight], [border]).
