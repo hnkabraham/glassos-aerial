@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased (fork)
+
+- From GlassOS (upstream #16, merged): after Home, the focus sound and a tile's focus animation no longer repeat on
+  their own, and the first top row app no longer stays enlarged for a moment. Package broadcasts that change nothing
+  shown refresh the tiles in place instead of rebuilding them (and no longer cancel an app being moved), and only a
+  key press plays the focus sound. In this fork the in-place refresh also covers folders and Most used order.
+
 ## Unreleased (fork): Screen Mirroring
 
 - **Screen Mirroring:** the TV can show an iPhone, iPad or Mac screen and play its music, compatible with AirPlay (UxPlay and jqssun's Android receiver, in their own `:airplay` process). Off until turned on. Fire OS 6 / Android 7.1 or later; hidden below that and in builds without the receiver (`-Pglassos.airplay.native=false`). [Guide](docs/SCREEN-MIRRORING.md).
