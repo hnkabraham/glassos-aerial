@@ -2,7 +2,8 @@
 
 Validated on October 28 and 29, 2026 on the Android TV API 31 emulator (ARM64, 1920 × 1080), debug build, on branch
 `feature/1.7`: the upstream focus fix, Now Playing, weather, place captions, Match frame rate, Liquid Glass and Live
-glass. **Not yet installed on a physical Fire TV.** The scenes are generated test clips and GlassOS's built-in night
+glass. On November 1 the signed release build went onto a Fire TV Stick 4K Max: see [On a Fire TV](#on-a-fire-tv).
+On the emulator the scenes are generated test clips and GlassOS's built-in night
 desert; the music is a debug-only demo session; the captions are invented; the weather is for the emulator's
 Los Angeles time-zone estimate.
 
@@ -105,12 +106,35 @@ critique (fidelity to Apple's glass, legibility at three metres, rendering artif
   the long shelf they also slid the backdrop along the edge and broke lines crossing the rim into steps; each band
   now moves it along the rim's normal, its straight runs and corners drawn as separate clipped pieces.
 
+## On a Fire TV
+
+On November 1, 2026, the signed release build `1.7.0-aerial.dev1` (version code 10) was installed with
+`adb install -r` over 1.5.0-aerial.1 on a Fire TV Stick 4K Max (2nd generation, AFTKRT, Fire OS 8.1.8.5); its settings
+were kept. Its scenery is the owner's own 104 clips (1080p HEVC Main at 29.97 fps, up to 15 minutes long, not in this
+repository), which played in the stick's hardware HEVC decoder.
+
+- **Weather:** turned on, it fetched from Open-Meteo over HTTPS on Fire OS 8 (`weather updated` in the log) and showed
+  an icon and the temperature in the time pill and the cinema clock.
+- **Live glass:** turned on, over the playing scenery the home drew 805 frames in 25 seconds: 5 ms at the 50th
+  percentile, 10 ms at the 90th, 13 ms at the 95th and 17 ms at the 99th, with 3.2% janky frames. The thread that
+  copies frames for the glass used about 20 seconds of processor time in the roughly 55 seconds before cinema mode
+  stopped it, about a third of one core. That is a rough figure from one run.
+- **Screensaver:** with GlassOS chosen as the screensaver, Amazon's Ambient Experience still took over at idle. Fire
+  OS 8 reads `secure amazon_ambient_enabled` when the TV starts, and on this model an unset value counts as on. After
+  it was set to 0 and the TV restarted once, GlassOS's screensaver started after 5 idle minutes, with the clock, in
+  place of Amazon's photos (`Starting dream: …AerialDream`, then `screensaver on`). Fire TV's own Display & Sounds >
+  Ambient Experience switch and disabling Amazon's Ambient app were not the fix (see [the user
+  guide](USAGE.md#screensaver)). GlassOS Manager's check was corrected to match.
+- **Screen Mirroring:** started over ADB, the receiver ran in its own process on port 7000 and a Mac on the same
+  network saw the TV as an AirPlay (`_airplay._tcp`) and RAOP (`_raop._tcp`) service. No device mirrored to it yet.
+- **Now Playing:** its notification access was granted and the listener was bound. No media app has played to it yet.
+
 ## Limits
 
-Only the Android TV API 31 emulator was used. Not tested: a Fire TV (Live glass's and the rim's cost on its GPU, Fire
-OS's handling of PixelCopy, a real mode switch and the Match Original Frame Rate setting, Open-Meteo's certificate on
-Fire OS), real media apps and casts for Now Playing, Apple's captions on the converted aerials (made, but not yet on
-the TV), and Android 7.0 or earlier, where Weather says it is unavailable. GitHub Actions was not run.
+Not tested on the Fire TV yet: place captions on screen, Match frame rate at a screensaver start, a mirroring session
+from an iPhone or Mac, Now Playing with a real media app, and the rim's cost on its own (Live glass was on). Not
+tested anywhere: a real mode switch and Fire TV's Match Original Frame Rate setting, and Android 7.0 or earlier, where
+Weather says it is unavailable.
 
 ---
 
