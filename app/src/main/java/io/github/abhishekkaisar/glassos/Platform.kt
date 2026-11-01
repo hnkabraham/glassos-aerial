@@ -49,6 +49,28 @@ object Platform {
         ctx.packageManager.getApplicationInfo(pkg, 0).enabled
     } catch (e: Throwable) { false }
 
+    /**
+     * On a Fire TV, whether Amazon's Ambient Experience still takes the TV's idle time, whatever screensaver is chosen.
+     * Fire OS reads secure amazon_ambient_enabled only when the TV starts; GlassOS Manager reads it the same way.
+     */
+    fun ambientOn(ctx: Context): Boolean = isFireTv(ctx) && ambientOn(
+        try { Settings.Secure.getString(ctx.contentResolver, "amazon_ambient_enabled") } catch (e: Exception) { null }
+    ) { hasAmbient(ctx) }
+
+    /** On unless the setting is 0; not set, on for the models with Ambient Experience, the ones with its app. */
+    fun ambientOn(value: String?, hasApp: () -> Boolean): Boolean = when (value?.trim()?.ifEmpty { null }) {
+        "0" -> false
+        null -> hasApp()
+        else -> true
+    }
+
+    /** Ambient Experience's app is on this TV, also disabled or removed for this user (`pm uninstall --user 0`). */
+    @Suppress("DEPRECATION") // MATCH_UNINSTALLED_PACKAGES from API 24, the same flag; minSdk is 22.
+    fun hasAmbient(ctx: Context): Boolean = try {
+        ctx.packageManager.getApplicationInfo(FIRE_AMBIENT, PackageManager.GET_UNINSTALLED_PACKAGES)
+        true
+    } catch (e: Throwable) { false }
+
     /** Home handlers and screensavers accumulate idle/setup time, not meaningful app viewing time. */
     fun usageHelpers(ctx: Context): Set<String> {
         val out = HashSet<String>()

@@ -167,7 +167,8 @@ manager saves the values it replaces on the Mac. It never restarts the TV and ne
 **Settings > Screensaver** (Scenery and display, after Move cinema clock) shows **GlassOS scenery** or the TV's own,
 such as "Fire TV’s own". Choose it for a card that says how to turn it on and offers **Preview**, which plays the
 screensaver at once, even before it is the TV's screensaver; any button ends it. Preview is offered when GlassOS is open as an app (as it is through Launcher
-Manager), not in the cover it shows over Fire TV's Home.
+Manager), not in the cover it shows over Fire TV's Home. On a Fire TV where Amazon's Ambient Experience is still on, the
+card says so, since GlassOS scenery does not play there when idle even while it is chosen.
 
 **Fire TV.**
 
@@ -176,13 +177,14 @@ Manager), not in the cover it shows over Fire TV's Home.
   there at all. The manager offers to turn it off (`amazon_ambient_enabled` → 0); restart the TV once afterwards,
   since Fire OS reads it only when it starts. Neither Fire TV's own **Settings > Display & Sounds > Ambient
   Experience** switch (the TV then goes to standby when idle) nor disabling the Ambient Experience app (then no
-  screensaver starts at all) does the same.
+  screensaver starts at all) does the same. The manager counts the app removed for the TV's user
+  (`pm uninstall --user 0`) as disabled; that case was not tried.
 - With **Stay awake while plugged in** on (Developer options), no screensaver starts. The manager offers to turn it off.
 - If the TV is set to sleep no later than its screensaver would start, it may sleep instead. The manager says so but
   leaves the sleep timers alone.
 - Launcher Manager can also change the screensaver; the manager warns when it is installed.
-- On a Fire TV Stick 4K Max (2nd generation, Fire OS 8.1.8.5), GlassOS scenery started when the TV was idle after
-  these steps and one restart.
+- On a Fire TV Stick 4K Max (2nd generation, Fire OS 8.1.8.5), GlassOS scenery started when the TV was idle once
+  `amazon_ambient_enabled` was 0 and the TV had restarted once.
 
 **Restore previous screensaver** in the manager puts back only the settings it changed, as they were before its first
 change; a setting that did not exist is removed again. This also works when the TV did not keep GlassOS scenery. If

@@ -316,8 +316,9 @@ def screensaver_options(value):
 
 def ambient_state(value, app):
     """Whether Amazon's Ambient Experience takes over the screensaver: "on", "off", or "none" (not on this TV), from
-    secure amazon_ambient_enabled and whether the TV has its app (`app`: None, "enabled" or "disabled"). Fire OS counts
-    a value that is not set as on for the models that have Ambient Experience, which are the ones with its app."""
+    secure amazon_ambient_enabled and whether the TV has its app (`app`: None, "enabled", "disabled" or "removed" for
+    the TV's user). Fire OS counts a value that is not set as on for the models that have Ambient Experience, which are
+    the ones with its app, also after it was disabled or removed for the user."""
     if value == "0":
         return "off"
     if value == "null":
@@ -1632,7 +1633,7 @@ class Manager:
     def _screensaver_probe(self, d):
         """The tracked settings (checked), whether the TV lists GlassOS's screensaver, whether Launcher Manager, which
         can also set the screensaver, is installed, and Amazon's Ambient Experience app (None when the TV does not have
-        it, else "enabled" or "disabled"). Read only."""
+        it, else "enabled", "disabled" or "removed"). Read only."""
         values = {}
         for ns, key, kind in SCREENSAVER:
             values[key] = setting_value(kind, d.shell("settings", "get", ns, key).strip() or "null")
@@ -1651,11 +1652,18 @@ class Manager:
             out = d.shell("dumpsys", "package", PACKAGE)
             installed = "android.service.dreams.DreamService" in out and DREAM in out
         launcher = "package:" + LAUNCHER_MANAGER in d.shell("pm", "list", "packages", LAUNCHER_MANAGER).split()
-        # Listed whether it is enabled or not; -d lists only the disabled ones.
+
+        # -u also lists it after `pm uninstall --user 0`, which leaves it on the TV; without -u it is listed whether it
+        # is enabled or not, and -d lists only the disabled ones.
+        def listed(*flags):
+            return "package:" + AMBIENT_APP in d.shell("pm", "list", "packages", *flags, AMBIENT_APP).split()
+
         ambient = None
-        if "package:" + AMBIENT_APP in d.shell("pm", "list", "packages", "--user", "0", AMBIENT_APP).split():
-            disabled = d.shell("pm", "list", "packages", "-d", "--user", "0", AMBIENT_APP).split()
-            ambient = "disabled" if "package:" + AMBIENT_APP in disabled else "enabled"
+        if listed("-u", "--user", "0"):
+            if not listed("--user", "0"):
+                ambient = "removed"
+            else:
+                ambient = "disabled" if listed("-d", "--user", "0") else "enabled"
         return values, installed, launcher, ambient
 
     def _screensaver_saved(self, id, values, installed, launcher, ambient_app):
@@ -1665,10 +1673,10 @@ class Manager:
         blockers, warnings = [], []
         if values["stay_on_while_plugged_in"] not in ("null", "0"):
             blockers.append("Stay awake while plugged in is on, so no screensaver can start.")
-        if ambient == "on" and ambient_app == "disabled":
+        if ambient == "on" and ambient_app in ("disabled", "removed"):
             blockers.append(
-                "Amazon’s Ambient Experience is on but its app is disabled, so the TV shows no screensaver at all when "
-                "idle: it just sleeps."
+                f"Amazon’s Ambient Experience is on but its app is {ambient_app}, so the TV shows no screensaver at "
+                "all when idle: it just sleeps."
             )
         elif ambient == "on":
             blockers.append("Amazon’s Ambient Experience is on, and it overrides other screensavers.")
@@ -1765,9 +1773,12 @@ class Manager:
                 "The TV did not keep GlassOS scenery as its screensaver. Its saved settings stay on this Mac; choose "
                 "Restore previous screensaver to put back what changed."
             )
-        log("GlassOS scenery is now this TV’s screensaver: it starts when the TV is idle, never during a video.")
+        if ambient or status["blockers"]:
+            log("GlassOS scenery is now this TV’s screensaver.")
+        else:
+            log("GlassOS scenery is now this TV’s screensaver: it starts when the TV is idle, never during a video.")
         if ambient:
-            log("Restart the TV once, so Amazon’s Ambient Experience lets go of the screensaver.")
+            log("Restart the TV once: until then Amazon’s Ambient Experience keeps GlassOS scenery from starting.")
         for line in status["blockers"] + status["warnings"]:
             log(line)
         return status

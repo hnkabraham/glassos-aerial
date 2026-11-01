@@ -66,10 +66,12 @@
   that as on for the Fire TVs that have Ambient Experience, and plays Amazon's photos instead of the chosen screensaver
   (seen on a Fire TV Stick 4K Max, 2nd generation, whose Check said nothing). Check now also looks for the Ambient
   Experience app (`com.amazon.tv.ftvambient`, read only) and reports Ambient Experience as on, off or not on this TV;
-  on, it is listed as stopping the screensaver (with no screensaver at all when its app is disabled), and Use GlassOS
-  scenery offers to set it to 0, which needs one TV restart. Restore says to restart when putting the old value back
-  turns it on again, also when that deletes it. With it at 0 and one restart, that stick played GlassOS scenery when
-  idle. Fire TV's own Display & Sounds > Ambient Experience switch is not a substitute: it puts the TV in standby.
+  on, it is listed as stopping the screensaver (with no screensaver at all when its app is disabled or removed for
+  the TV's user), and Use GlassOS scenery offers to set it to 0, which needs one TV restart. Restore says to restart
+  when putting the old value back turns it on again, also when that deletes it. With it at 0 and one restart, that
+  stick played GlassOS scenery when idle. Fire TV's own Display & Sounds > Ambient Experience switch is not a
+  substitute: it puts the TV in standby. GlassOS's Settings > Screensaver card now says when Ambient Experience is
+  still on, rather than that the chosen scenery plays.
 
 ## Unreleased (fork): Screen Mirroring
 

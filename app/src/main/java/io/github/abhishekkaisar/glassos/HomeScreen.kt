@@ -2105,9 +2105,18 @@ class HomeScreen(val ctx: Context, private val host: HomeHost, seed: HomeScreen?
      * screensaver (that needs a protected setting); GlassOS Manager does it over ADB.
      */
     fun screensaverInfo() {
-        val text = if (AerialDream.chosen(ctx)) "Your scenery plays when the TV is idle in any app. It does not start while a video is playing."
-            else "To show your scenery when the TV is idle, choose Use GlassOS scenery in GlassOS Manager > TV controls on " +
+        val chosen = AerialDream.chosen(ctx)
+        val text = when {
+            // Fire OS hands the idle time to Ambient Experience whatever the screensaver setting names.
+            chosen && Platform.ambientOn(ctx) -> "Amazon\u2019s Ambient Experience is still on, so your scenery does not " +
+                "play when the TV is idle. To turn it off, choose Use GlassOS scenery in GlassOS Manager > TV controls on " +
+                "your Mac, then restart the TV once."
+            chosen -> "Your scenery plays when the TV is idle in any app. It does not start while a video is playing." +
+                (if (Platform.isFireTv(ctx) && Platform.hasAmbient(ctx))
+                    " If Amazon\u2019s Ambient Experience was just turned off, restart the TV once first." else "")
+            else -> "To show your scenery when the TV is idle, choose Use GlassOS scenery in GlassOS Manager > TV controls on " +
                 "your Mac." + (if (Platform.isFireTv(ctx)) " If it turns Amazon\u2019s Ambient Experience off, restart the TV once." else "")
+        }
         val items = ArrayList<Pair<String, () -> Unit>>()
         // From MainActivity only: the overlay after Home hands launches to the app it waits for.
         if (ctx is Activity) items.add("Preview" to { host.startApp(Intent(ctx, ScreensaverPreview::class.java), ctx.packageName, null) })
