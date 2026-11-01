@@ -102,7 +102,9 @@ is done on the TV, in Settings. A code shown on the TV never reaches the manager
 
 ### Screensaver
 
-**Check** reads the TV's screensaver settings and whether GlassOS's screensaver is installed. It lists what stops a screensaver (Stay awake while plugged in; Amazon's Ambient Experience) and notes what may get in the way (a sleep time no longer than the screensaver's wait; Launcher Manager, which can also change the screensaver).
+**Check** reads the TV's screensaver settings, whether GlassOS's screensaver is installed, and whether the TV has Amazon's Ambient Experience app (`com.amazon.tv.ftvambient`, enabled or disabled). It lists what stops a screensaver (Stay awake while plugged in; Amazon's Ambient Experience) and notes what may get in the way (a sleep time no longer than the screensaver's wait; Launcher Manager, which can also change the screensaver).
+
+**Amazon's Ambient Experience** (the photos some Fire TVs show when idle) replaces any other screensaver while `secure amazon_ambient_enabled` is anything but `0`. Fire OS counts a value that is not set as on for the models that have Ambient Experience, so the manager does too when the TV has its app (on a Fire TV Stick 4K Max, 2nd generation, it was not set). If its app is disabled while it is on, the TV shows no screensaver at all and just sleeps. Fire OS reads this setting only when it starts, so after it changes, restart the TV once. Fire TV's own **Settings > Display & Sounds > Ambient Experience** switch is a different setting: turned off, the TV goes to standby when idle instead of starting another screensaver.
 
 **Use GlassOS scenery** appears after a Check finds GlassOS's screensaver on the TV. Its confirmation lists exactly these changes; the last two are checkboxes, shown only when that setting is on, and ticked by default:
 
@@ -111,12 +113,12 @@ is done on the TV, in Settings. A code shown on the TV never reaches the manager
 | `secure screensaver_components` | `io.github.abhishekkaisar.glassos.aerial/io.github.abhishekkaisar.glassos.AerialDream` |
 | `secure screensaver_enabled` | `1` |
 | `secure screensaver_activate_on_sleep` | `1` |
-| `secure amazon_ambient_enabled` (Fire TV) | `0`, if ticked; restart the TV once afterwards |
+| `secure amazon_ambient_enabled` (Fire TV with Ambient Experience) | `0`, if ticked; restart the TV once afterwards |
 | `global stay_on_while_plugged_in` | `0`, if ticked |
 
-Before its first change, the manager saves the TV's current screensaver settings on this Mac, once: using it again keeps that first set. Afterwards it reads the settings back and reports an error if the TV did not keep GlassOS as its screensaver; **Restore previous screensaver** then puts back what it changed. It never writes `screensaver_activate_on_dock`, `screensaver_default_component`, `sleep_timeout` or `screen_off_timeout`, and never restarts the TV. Whether Fire OS 8.1.8.5 keeps a third-party screensaver after these changes has not been verified yet.
+Before its first change, the manager saves the TV's current screensaver settings on this Mac, once: using it again keeps that first set. Afterwards it reads the settings back and reports an error if the TV did not keep GlassOS as its screensaver; **Restore previous screensaver** then puts back what it changed. It never writes `screensaver_activate_on_dock`, `screensaver_default_component`, `sleep_timeout` or `screen_off_timeout`, and never restarts the TV. On a Fire TV Stick 4K Max (2nd generation, Fire OS 8.1.8.5), GlassOS scenery started when the TV was idle once `amazon_ambient_enabled` was `0` and the TV had restarted once.
 
-**Restore previous screensaver** appears while a saved set exists. It puts back only the settings the manager changed, as they were before its first change: a setting that did not exist is deleted (`settings delete`), and the others are set back (`settings put`). It reads them back and clears the saved set only when every one matches. If the TV's screensaver is neither GlassOS scenery nor the one saved, because another was chosen on the TV or by another tool, Restore changes nothing and keeps the saved set; to put the saved values back anyway, choose **Use GlassOS scenery**, then **Restore previous screensaver**. If Restore turned Amazon's Ambient Experience back on, restart the TV once.
+**Restore previous screensaver** appears while a saved set exists. It puts back only the settings the manager changed, as they were before its first change: a setting that did not exist is deleted (`settings delete`), and the others are set back (`settings put`). It reads them back and clears the saved set only when every one matches. If the TV's screensaver is neither GlassOS scenery nor the one saved, because another was chosen on the TV or by another tool, Restore changes nothing and keeps the saved set; to put the saved values back anyway, choose **Use GlassOS scenery**, then **Restore previous screensaver**. If Restore turned Amazon's Ambient Experience back on (also by deleting a value that was not set before, on a Fire TV that has Ambient Experience), restart the TV once.
 
 ## Local privacy and failure behavior
 

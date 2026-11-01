@@ -171,19 +171,23 @@ Manager), not in the cover it shows over Fire TV's Home.
 
 **Fire TV.**
 
-- Amazon's **Ambient Experience** takes over from any other screensaver while it is on. The manager offers to turn it
-  off; restart the TV once afterwards.
+- Amazon's **Ambient Experience** (photos when idle) takes over from any other screensaver while it is on. On a Fire TV
+  that has it, it counts as on until its setting is 0; on a Fire TV Stick 4K Max (2nd generation) the setting was not
+  there at all. The manager offers to turn it off (`amazon_ambient_enabled` → 0); restart the TV once afterwards,
+  since Fire OS reads it only when it starts. Neither Fire TV's own **Settings > Display & Sounds > Ambient
+  Experience** switch (the TV then goes to standby when idle) nor disabling the Ambient Experience app (then no
+  screensaver starts at all) does the same.
 - With **Stay awake while plugged in** on (Developer options), no screensaver starts. The manager offers to turn it off.
 - If the TV is set to sleep no later than its screensaver would start, it may sleep instead. The manager says so but
   leaves the sleep timers alone.
 - Launcher Manager can also change the screensaver; the manager warns when it is installed.
-- Not yet verified: whether Fire OS 8.1.8.5 (Fire TV Stick 4K Max, 2nd generation) keeps a third-party screensaver
-  after these steps.
+- On a Fire TV Stick 4K Max (2nd generation, Fire OS 8.1.8.5), GlassOS scenery started when the TV was idle after
+  these steps and one restart.
 
 **Restore previous screensaver** in the manager puts back only the settings it changed, as they were before its first
 change; a setting that did not exist is removed again. This also works when the TV did not keep GlassOS scenery. If
 another screensaver (neither GlassOS scenery nor the saved one) was chosen since, it changes nothing and keeps the saved
-values. Restart the TV once if it turned Ambient Experience back on.
+values. Restart the TV once if it turned Ambient Experience back on; the manager says when.
 
 ### Now Playing
 

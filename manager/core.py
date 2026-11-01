@@ -30,6 +30,9 @@ TV_SLOW = "The TV took too long to answer; it may be busy. Wait a moment, then t
 # GlassOS's screensaver (AerialDream.kt, GlassOS 1.6.0 and later), as the TV's screensaver setting names it.
 DREAM = PACKAGE + "/io.github.abhishekkaisar.glassos.AerialDream"
 LAUNCHER_MANAGER = "com.wolf.tn"
+# Amazon's Ambient Experience (photos when idle). On Fire TVs that have it, Fire OS plays it instead of the chosen
+# screensaver unless secure amazon_ambient_enabled is 0, and reads that only when the TV starts.
+AMBIENT_APP = "com.amazon.tv.ftvambient"
 # The TV settings a screensaver depends on: (namespace, key, kind). The first three, and the two the user may opt into
 # (Amazon's Ambient Experience, Stay awake), are the only ones ever written; the timeouts are read for the report.
 SCREENSAVER = [
@@ -309,6 +312,17 @@ def screensaver_options(value):
     ):
         raise Error("Choose which settings to change.")
     return {"ambient": value.get("ambient", False), "stayAwake": value.get("stayAwake", False)}
+
+
+def ambient_state(value, app):
+    """Whether Amazon's Ambient Experience takes over the screensaver: "on", "off", or "none" (not on this TV), from
+    secure amazon_ambient_enabled and whether the TV has its app (`app`: None, "enabled" or "disabled"). Fire OS counts
+    a value that is not set as on for the models that have Ambient Experience, which are the ones with its app."""
+    if value == "0":
+        return "off"
+    if value == "null":
+        return "on" if app else "none"
+    return "on"
 
 
 def schedule(value, place=None, zone=None, on=None):
@@ -1616,8 +1630,9 @@ class Manager:
     # or changes its sleep timers.
 
     def _screensaver_probe(self, d):
-        """The tracked settings (checked), whether the TV lists GlassOS's screensaver, and whether Launcher Manager,
-        which can also set the screensaver, is installed. Read only."""
+        """The tracked settings (checked), whether the TV lists GlassOS's screensaver, whether Launcher Manager, which
+        can also set the screensaver, is installed, and Amazon's Ambient Experience app (None when the TV does not have
+        it, else "enabled" or "disabled"). Read only."""
         values = {}
         for ns, key, kind in SCREENSAVER:
             values[key] = setting_value(kind, d.shell("settings", "get", ns, key).strip() or "null")
@@ -1636,15 +1651,26 @@ class Manager:
             out = d.shell("dumpsys", "package", PACKAGE)
             installed = "android.service.dreams.DreamService" in out and DREAM in out
         launcher = "package:" + LAUNCHER_MANAGER in d.shell("pm", "list", "packages", LAUNCHER_MANAGER).split()
-        return values, installed, launcher
+        # Listed whether it is enabled or not; -d lists only the disabled ones.
+        ambient = None
+        if "package:" + AMBIENT_APP in d.shell("pm", "list", "packages", "--user", "0", AMBIENT_APP).split():
+            disabled = d.shell("pm", "list", "packages", "-d", "--user", "0", AMBIENT_APP).split()
+            ambient = "disabled" if "package:" + AMBIENT_APP in disabled else "enabled"
+        return values, installed, launcher, ambient
 
-    def _screensaver_saved(self, id, values, installed, launcher):
+    def _screensaver_saved(self, id, values, installed, launcher, ambient_app):
         """Keeps what the TV reports about its screensaver on the device row, beside the saved previous values."""
         active = values["screensaver_components"].split(",")[0] == DREAM
+        ambient = ambient_state(values["amazon_ambient_enabled"], ambient_app)
         blockers, warnings = [], []
         if values["stay_on_while_plugged_in"] not in ("null", "0"):
             blockers.append("Stay awake while plugged in is on, so no screensaver can start.")
-        if values["amazon_ambient_enabled"] not in ("null", "0"):
+        if ambient == "on" and ambient_app == "disabled":
+            blockers.append(
+                "Amazon’s Ambient Experience is on but its app is disabled, so the TV shows no screensaver at all when "
+                "idle: it just sleeps."
+            )
+        elif ambient == "on":
             blockers.append("Amazon’s Ambient Experience is on, and it overrides other screensavers.")
         sleep, off = values["sleep_timeout"], values["screen_off_timeout"]
         if sleep != "null" and off != "null" and 0 < int(sleep) <= int(off):
@@ -1668,6 +1694,7 @@ class Manager:
                 current=dict(values),
                 installed=installed,
                 launcher_manager=launcher,
+                ambient=ambient,
                 active=active,
                 blockers=blockers,
                 warnings=warnings,
@@ -1701,16 +1728,17 @@ class Manager:
         options = screensaver_options(options)
         d = self.device(id)
         log("Reading the TV’s screensaver settings…")
-        values, installed, launcher = self._screensaver_probe(d)
+        values, installed, launcher, ambient_app = self._screensaver_probe(d)
         if not installed:
-            self._screensaver_saved(id, values, installed, launcher)
+            self._screensaver_saved(id, values, installed, launcher, ambient_app)
             raise Error("GlassOS’s screensaver is not on this TV. " + UPDATE_GLASSOS)
         writes = [
             ("secure", "screensaver_components", DREAM),
             ("secure", "screensaver_enabled", "1"),
             ("secure", "screensaver_activate_on_sleep", "1"),
         ]
-        ambient = options["ambient"] and values["amazon_ambient_enabled"] not in ("null", "0")
+        # Also when the setting is not there yet, on a TV with Ambient Experience: Fire OS counts that as on.
+        ambient = options["ambient"] and ambient_state(values["amazon_ambient_enabled"], ambient_app) == "on"
         if ambient:
             writes.append(("secure", "amazon_ambient_enabled", "0"))
         if options["stayAwake"] and values["stay_on_while_plugged_in"] not in ("null", "0"):
@@ -1757,11 +1785,11 @@ class Manager:
         plan = [(ns, key, setting_value(kind, previous.get(key))) for ns, key, kind in SCREENSAVER if key in changed]
         d = self.device(id)
         log("Reading the TV’s screensaver settings…")
-        values, installed, launcher = self._screensaver_probe(d)
+        values, installed, launcher, ambient_app = self._screensaver_probe(d)
         # Back on the saved screensaver (the TV's own), the saved values suit it; another one could break.
         components = values["screensaver_components"]
         if components.split(",")[0] != DREAM and components != previous.get("screensaver_components"):
-            self._screensaver_saved(id, values, installed, launcher)
+            self._screensaver_saved(id, values, installed, launcher, ambient_app)
             raise Error(
                 "The TV’s screensaver was changed elsewhere since GlassOS Manager set it, so nothing was restored. "
                 "To put the saved settings back anyway, choose Use GlassOS scenery, then Restore previous screensaver."
@@ -1784,7 +1812,8 @@ class Manager:
                 self.save()
         status = self._screensaver_saved(id, *after)
         log("Restored the screensaver settings this TV had before GlassOS Manager changed them.")
-        if "amazon_ambient_enabled" in changed and previous.get("amazon_ambient_enabled") not in ("null", "0"):
+        # A setting deleted again counts as on, too, on a TV with Ambient Experience.
+        if "amazon_ambient_enabled" in changed and ambient_state(previous["amazon_ambient_enabled"], after[3]) == "on":
             log("Restart the TV once, so Amazon’s Ambient Experience comes back.")
         self._screensaver_report(status, log)
         return status

@@ -11,10 +11,12 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from core import (
+    AMBIENT_APP,
     Device,
     Error,
     Manager,
     address,
+    ambient_state,
     atomic_json,
     digest,
     glass_reply,
@@ -154,6 +156,8 @@ class ScreensaverTV(MemoryDevice):
         }
         self.dreams = [AMAZON, DREAM]
         self.packages = []
+        # Installed but turned off (`pm disable-user`): still listed, and listed alone with -d.
+        self.disabled = []
 
     def shell(self, *args, **kwargs):
         if args[0] == "settings":
@@ -171,7 +175,8 @@ class ScreensaverTV(MemoryDevice):
             return "\n".join(self.dreams) or "No services found"
         if args[:3] == ("pm", "list", "packages"):
             self.commands.append(args)
-            return "\n".join("package:" + p for p in self.packages if args[3] in p)
+            listed = [p for p in self.packages if "-d" not in args or p in self.disabled]
+            return "\n".join("package:" + p for p in listed if args[-1] in p)
         return super().shell(*args, **kwargs)
 
     def writes(self):
@@ -1224,6 +1229,99 @@ class CoreTests(unittest.TestCase):
         self.m.screensaver_restore(id, messages.append)
         self.assertEqual("0", self.d.settings[("secure", "amazon_ambient_enabled")])
         self.assertFalse(any("Restart the TV once" in m for m in messages), messages)
+
+    def test_ambient_state_follows_fire_os(self):
+        # Fire OS reads a setting that is not there as on, for the models that have Ambient Experience (its app).
+        for value, app, state in [
+            ("0", None, "off"),
+            ("0", "enabled", "off"),
+            ("1", None, "on"),
+            ("1", "enabled", "on"),
+            ("2", "disabled", "on"),
+            ("-1", "enabled", "on"),
+            ("null", "enabled", "on"),
+            ("null", "disabled", "on"),
+            ("null", None, "none"),
+        ]:
+            self.assertEqual(state, ambient_state(value, app), (value, app))
+
+    def ambient(self, value, app="enabled"):
+        """Sets the screensaver TV's Ambient Experience, with Stay awake off so only Ambient can stop a screensaver."""
+        self.d.settings[("global", "stay_on_while_plugged_in")] = "0"
+        if value == "null":
+            self.d.settings.pop(("secure", "amazon_ambient_enabled"))
+        else:
+            self.d.settings[("secure", "amazon_ambient_enabled")] = value
+        self.d.packages = [AMBIENT_APP] if app else []
+        self.d.disabled = [AMBIENT_APP] if app == "disabled" else []
+
+    def test_unset_ambient_is_on_where_the_tv_has_its_app(self):
+        # As on a Fire TV Stick 4K Max (2nd generation): the setting is not there, and Amazon's photos still play.
+        id = self.screensaver_tv()
+        self.ambient("null")
+        out = self.m.screensaver_check(id, lambda _: None)
+        self.assertEqual([], self.d.writes())
+        self.assertEqual("on", out["ambient"])
+        self.assertEqual(["Amazon’s Ambient Experience is on, and it overrides other screensavers."], out["blockers"])
+        messages = []
+        out = self.m.screensaver_set(id, {"ambient": True}, messages.append)
+        self.assertIn(("settings", "put", "secure", "amazon_ambient_enabled", "0"), self.d.writes())
+        self.assertTrue(any("Restart the TV once" in m for m in messages), messages)
+        self.assertEqual(("off", []), (out["ambient"], out["blockers"]))
+        self.assertEqual("null", self.m.state["devices"][0]["screensaver"]["previous"]["amazon_ambient_enabled"])
+        self.assertNothingRisky()
+
+    def test_unset_ambient_without_its_app_is_left_alone(self):
+        id = self.screensaver_tv()
+        self.ambient("null", app=None)
+        out = self.m.screensaver_check(id, lambda _: None)
+        self.assertEqual(("none", []), (out["ambient"], out["blockers"]))
+        messages = []
+        self.m.screensaver_set(id, {"ambient": True}, messages.append)
+        self.assertNotIn("amazon_ambient_enabled", [c[3] for c in self.d.writes()])
+        self.assertNotIn(("secure", "amazon_ambient_enabled"), self.d.settings)
+        self.assertFalse(any("Restart the TV once" in m for m in messages), messages)
+
+    def test_ambient_off_and_on_as_set(self):
+        id = self.screensaver_tv()
+        self.ambient("0")
+        out = self.m.screensaver_check(id, lambda _: None)
+        self.assertEqual(("off", []), (out["ambient"], out["blockers"]))
+        self.m.screensaver_set(id, {"ambient": True}, lambda _: None)
+        self.assertNotIn("amazon_ambient_enabled", [c[3] for c in self.d.writes()])
+        # 1 is on, with or without the app.
+        for app in ("enabled", None):
+            self.ambient("1", app=app)
+            out = self.m.screensaver_check(id, lambda _: None)
+            self.assertEqual("on", out["ambient"])
+            self.assertEqual(1, len(out["blockers"]))
+
+    def test_ambient_with_its_app_disabled_leaves_no_screensaver(self):
+        # Fire OS still hands the screensaver to Ambient Experience, which cannot start: the TV just sleeps.
+        id = self.screensaver_tv()
+        for value in ("null", "1"):
+            self.ambient(value, app="disabled")
+            out = self.m.screensaver_check(id, lambda _: None)
+            self.assertEqual("on", out["ambient"])
+            self.assertEqual(1, len(out["blockers"]))
+            self.assertIn("no screensaver at all", out["blockers"][0])
+            self.assertIn("disabled", out["blockers"][0])
+        # Turning the setting off is still the way out.
+        self.m.screensaver_set(id, {"ambient": True}, lambda _: None)
+        self.assertIn(("settings", "put", "secure", "amazon_ambient_enabled", "0"), self.d.writes())
+
+    def test_restoring_an_unset_ambient_mentions_a_restart(self):
+        id = self.screensaver_tv()
+        self.ambient("null")
+        self.m.screensaver_set(id, {"ambient": True}, lambda _: None)
+        self.d.commands.clear()
+        messages = []
+        out = self.m.screensaver_restore(id, messages.append)
+        self.assertIn(("settings", "delete", "secure", "amazon_ambient_enabled"), self.d.writes())
+        self.assertNotIn(("secure", "amazon_ambient_enabled"), self.d.settings)
+        self.assertTrue(any("Restart the TV once" in m for m in messages), messages)
+        self.assertEqual("on", out["ambient"])
+        self.assertNothingRisky()
 
     def test_screensaver_needs_glassos_on_the_tv(self):
         id = self.screensaver_tv()

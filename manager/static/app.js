@@ -1044,6 +1044,15 @@ $("#applock-guard-form").onsubmit = (e) => {
 
 let screensaverSignature = "";
 const settingOn = (v) => v !== undefined && v !== "null" && v !== "0";
+// "on", "off" or "none" (not on this TV), as core works it out: an unset value is on where the TV has Ambient
+// Experience. A Check saved before the manager knew that has the setting only.
+const ambientState = (s) =>
+  s?.ambient ||
+  (settingOn(s?.current?.amazon_ambient_enabled)
+    ? "on"
+    : s?.current?.amazon_ambient_enabled === "0"
+      ? "off"
+      : "none");
 function renderScreensaver(device) {
   const s = device?.screensaver,
     sig = JSON.stringify(s || null) + (device?.id || "");
@@ -1094,12 +1103,13 @@ function renderScreensaver(device) {
     settingOn(v.stay_on_while_plugged_in) ? "On" : "Off",
     !settingOn(v.stay_on_while_plugged_in),
   );
-  if (v.amazon_ambient_enabled !== "null")
+  const ambient = ambientState(s);
+  if (ambient !== "none")
     row(
       list,
       "Amazon Ambient Experience",
-      settingOn(v.amazon_ambient_enabled) ? "On" : "Off",
-      !settingOn(v.amazon_ambient_enabled),
+      ambient === "on" ? "On" : "Off",
+      ambient !== "on",
     );
   row(
     list,
@@ -1172,11 +1182,12 @@ function renderMirroring(device) {
 }
 
 $("#screensaver-set").onclick = () => {
-  const v = state.devices.find((d) => d.id === selectedDevice)?.screensaver
-    ?.current;
+  const s = state.devices.find((d) => d.id === selectedDevice)?.screensaver;
   // Offered only when it is on (and Amazon's setting only where the TV has it); ticked by default.
-  $("#screensaver-ambient").hidden = !settingOn(v?.amazon_ambient_enabled);
-  $("#screensaver-stay").hidden = !settingOn(v?.stay_on_while_plugged_in);
+  $("#screensaver-ambient").hidden = ambientState(s) !== "on";
+  $("#screensaver-stay").hidden = !settingOn(
+    s?.current?.stay_on_while_plugged_in,
+  );
   $("#screensaver-form")
     .querySelectorAll("input[type=checkbox]")
     .forEach((c) => (c.checked = true));
