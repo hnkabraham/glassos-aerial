@@ -5,7 +5,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FrameRateTest {
-    // The modes a Fire TV Stick 4K Max reports (rates as reported, inexact), current 2160p at 59.94.
+    // Modes like a Fire TV's, with its inexact rates plus a 50 Hz mode for 25 fps scenes; current 2160p at 59.94.
     private val modes = listOf(
         ModeSpec(1, 1920, 1080, 60.000004f), ModeSpec(2, 1920, 1080, 59.939999f), ModeSpec(3, 3840, 2160, 59.939999f),
         ModeSpec(5, 3840, 2160, 50f), ModeSpec(6, 3840, 2160, 60.000004f), ModeSpec(7, 3840, 2160, 30f),
